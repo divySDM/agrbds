@@ -6,6 +6,7 @@ export class Camera {
   private readonly easing: number = 0.05;
 
   setTarget(x: number): void {
+    if (!Number.isFinite(x)) return;
     this.targetX = Math.max(0, Math.min(x - GAME_WIDTH / 2, WORLD_WIDTH - GAME_WIDTH));
   }
 

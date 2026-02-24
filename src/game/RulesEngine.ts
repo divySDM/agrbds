@@ -40,6 +40,6 @@ export class RulesEngine {
   }
 
   allPigsDefeated(pigs: Pig[]): boolean {
-    return pigs.length > 0 && pigs.every((p) => p.isDestroyed);
+    return pigs.length === 0;
   }
 }

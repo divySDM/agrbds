@@ -1,11 +1,12 @@
 import type { Scene } from '../game/Scene';
 import type { Game } from '../game/Game';
-import { GAME_WIDTH, GAME_HEIGHT } from '../game/types';
+import { SceneType, GAME_WIDTH, GAME_HEIGHT } from '../game/types';
 import { LevelScene } from '../game/LevelScene';
 import { LEVELS } from '../levels/index';
 import { MenuScene } from './MenuScene';
 
 export class LevelSelectScene implements Scene {
+  readonly sceneType = SceneType.LEVEL_SELECT;
   private game!: Game;
 
   enter(game: Game): void {

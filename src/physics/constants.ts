@@ -47,7 +47,7 @@ export const SLINGSHOT = {
   x: 200,
   y: 480,
   maxDrag: 120,
-  powerScale: 0.16,
+  powerScale: 0.22,
 } as const;
 
 export const BOMB = {

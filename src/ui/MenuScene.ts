@@ -1,9 +1,10 @@
 import type { Scene } from '../game/Scene';
 import type { Game } from '../game/Game';
-import { GAME_WIDTH, GAME_HEIGHT } from '../game/types';
+import { SceneType, GAME_WIDTH, GAME_HEIGHT } from '../game/types';
 import { LevelSelectScene } from './LevelSelectScene';
 
 export class MenuScene implements Scene {
+  readonly sceneType = SceneType.MENU;
   private game!: Game;
   private titleBounce: number = 0;
 

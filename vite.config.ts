@@ -10,4 +10,7 @@ export default defineConfig({
   build: {
     target: 'ES2020',
   },
+  test: {
+    exclude: ['tests/browser/**', 'node_modules/**'],
+  },
 });

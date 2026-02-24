@@ -1,7 +1,8 @@
 import Matter from 'matter-js';
 import type { Scene } from './Scene';
 import type { Game } from './Game';
-import { TurnState, GAME_WIDTH, GAME_HEIGHT } from './types';
+import { TurnState, SceneType, GAME_WIDTH, GAME_HEIGHT } from './types';
+import type { TestGameState } from './types';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Camera } from './Camera';
 import { TurnManager } from './TurnManager';
@@ -36,14 +37,35 @@ export class LevelScene implements Scene {
   private particles: Particle[] = [];
   private explosionEffects: ExplosionEffect[] = [];
   private nextBirdDelay: number = 0;
+  private flyingTime: number = 0;
 
   // Overlays
   private victoryScreen: VictoryScreen | null = null;
   private gameOverScreen: GameOverScreen | null = null;
   private finalStars: number = 0;
 
+  get sceneType(): SceneType {
+    if (this.victoryScreen) return SceneType.VICTORY;
+    if (this.gameOverScreen) return SceneType.GAME_OVER;
+    return SceneType.PLAYING;
+  }
+
   constructor(levelData: LevelData) {
     this.levelData = levelData;
+  }
+
+  getTestSnapshot(): Omit<TestGameState, 'highestUnlocked' | 'levelStars'> {
+    return {
+      scene: this.sceneType,
+      turnState: this.turnManager?.state ?? null,
+      score: this.scoreManager?.score ?? 0,
+      pigsAlive: this.level?.pigs.length ?? 0,
+      birdsRemaining: this.level?.birdQueue.remaining ?? 0,
+      levelId: this.levelData.id,
+      cameraX: Number.isFinite(this.camera?.x) ? this.camera.x : 0,
+      slingshotX: this.level?.slingshot.anchorX ?? 200,
+      slingshotY: this.level?.slingshot.anchorY ?? 600,
+    };
   }
 
   enter(game: Game): void {
@@ -121,7 +143,10 @@ export class LevelScene implements Scene {
 
     // Camera follows bird in flight
     if (this.turnManager.state === TurnState.FLYING && this.currentBird) {
-      this.camera.followBird(this.currentBird.body.position.x);
+      const birdX = this.currentBird.body.position.x;
+      if (Number.isFinite(birdX)) {
+        this.camera.followBird(birdX);
+      }
     }
     this.camera.update();
 
@@ -129,13 +154,20 @@ export class LevelScene implements Scene {
     const allDefeated = this.rulesEngine.allPigsDefeated(this.level.pigs);
 
     if (this.turnManager.state === TurnState.FLYING && this.currentBird) {
-      // Check if bird has gone off screen or is very slow
+      // Check if bird has gone off screen or has slowed down
       const bird = this.currentBird;
+      this.flyingTime += dt;
+
       const outOfBounds = bird.body.position.y > GAME_HEIGHT + 100 ||
         bird.body.position.x > GAME_WIDTH * 3 ||
         bird.body.position.x < -200;
 
-      if (outOfBounds) {
+      // Speed-based settling: after a grace period for collisions, if bird is slow, settle
+      const birdStopped = this.flyingTime > 1.5 && bird.body.speed < 1.5;
+      // Max flying time as safety net (e.g. bird stuck bouncing)
+      const maxFlyingTime = this.flyingTime > 8.0;
+
+      if (outOfBounds || birdStopped || maxFlyingTime) {
         this.turnManager.setState(TurnState.SETTLING);
       }
     }
@@ -145,6 +177,13 @@ export class LevelScene implements Scene {
       allDefeated,
       !this.level.birdQueue.isEmpty()
     );
+
+    // Late win check: pigs may die from ongoing physics after turn transitioned
+    if (allDefeated &&
+      (this.turnManager.state === TurnState.AIMING ||
+       this.turnManager.state === TurnState.NEXT_BIRD)) {
+      this.turnManager.setState(TurnState.LEVEL_WON);
+    }
 
     // Handle turn transitions
     if (this.turnManager.state === TurnState.NEXT_BIRD) {
@@ -400,6 +439,7 @@ export class LevelScene implements Scene {
       const velocity = this.level.slingshot.release();
       this.currentBird.launch(velocity.x, velocity.y);
       this.launchedBirds.push(this.currentBird);
+      this.flyingTime = 0;
       this.turnManager.setState(TurnState.FLYING);
     }
   }

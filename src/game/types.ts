@@ -59,6 +59,21 @@ export const GAME_WIDTH = 1280;
 export const GAME_HEIGHT = 720;
 export const WORLD_WIDTH = 2560;
 
+// Test API state snapshot (DEV mode only)
+export interface TestGameState {
+  scene: SceneType;
+  turnState: TurnState | null;
+  score: number;
+  pigsAlive: number;
+  birdsRemaining: number;
+  levelId: number | null;
+  highestUnlocked: number;
+  levelStars: Record<number, number>;
+  cameraX: number;
+  slingshotX: number;
+  slingshotY: number;
+}
+
 // Scoring constants
 export const SCORE = {
   PIG_DEFEAT: 5000,
