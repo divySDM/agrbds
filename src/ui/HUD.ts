@@ -1,6 +1,5 @@
 import { GAME_WIDTH, BirdType } from '../game/types';
 import type { BirdQueue } from '../entities/BirdQueue';
-import { freaky } from './freaky';
 
 export class HUD {
   render(ctx: CanvasRenderingContext2D, score: number, birdQueue: BirdQueue): void {
@@ -16,7 +15,7 @@ export class HUD {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 24px Arial, sans-serif';
-    ctx.fillText(freaky(`Score: ${score}`), 20, 30);
+    ctx.fillText(`Score: ${score}`, 20, 30);
 
     // Bird queue indicator
     const types = birdQueue.types;

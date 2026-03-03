@@ -20,10 +20,16 @@ export class TurnManager {
   update(
     physics: PhysicsWorld,
     allPigsDefeated: boolean,
-    hasBirdsRemaining: boolean
+    hasBirdsRemaining: boolean,
+    hasPendingSpecialEffects: boolean = false
   ): void {
     switch (this._state) {
       case TurnState.SETTLING: {
+        // Don't settle while special effects are pending (gravity inversion, TNT chains)
+        if (hasPendingSpecialEffects) {
+          this.settlingCounter = 0;
+          break;
+        }
         if (physics.isWorldSettled(SETTLING_THRESHOLD)) {
           this.settlingCounter++;
         } else {

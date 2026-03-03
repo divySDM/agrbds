@@ -55,6 +55,17 @@ export const BOMB = {
   blastForce: 0.08,
 } as const;
 
+export const TNT = {
+  blastRadius: 200,
+  blastForce: 0.12,
+  chainDelay: 0.1,
+  maxChainDepth: 10,
+} as const;
+
+export const GRAVITY_INVERSION = {
+  duration: 3.0,
+} as const;
+
 export const DAMAGE_VELOCITY_THRESHOLD = 2.0;
 export const DAMAGE_SCALE = 18;
 export const SETTLING_THRESHOLD = 0.15;

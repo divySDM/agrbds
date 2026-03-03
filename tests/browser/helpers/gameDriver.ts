@@ -5,13 +5,13 @@ import { waitForScene, waitForTurnState, waitForSettled, waitForCameraReturn, ge
 // Button coordinates (in game space 1280×720)
 const PLAY_BUTTON = { x: 640, y: 430 };
 
-// Level select layout
-const LEVEL_BTN_SIZE = 100;
-const LEVEL_BTN_GAP = 30;
+// Level select layout (must match LevelSelectScene.ts: btnSize=80, gap=20, cols=5, startY=180)
+const LEVEL_BTN_SIZE = 80;
+const LEVEL_BTN_GAP = 20;
 const LEVEL_COLS = 5;
 const LEVEL_TOTAL_W = LEVEL_COLS * LEVEL_BTN_SIZE + (LEVEL_COLS - 1) * LEVEL_BTN_GAP;
 const LEVEL_START_X = (1280 - LEVEL_TOTAL_W) / 2 + LEVEL_BTN_SIZE / 2;
-const LEVEL_START_Y = 250;
+const LEVEL_START_Y = 180;
 
 // Slingshot coordinates
 const SLINGSHOT_ANCHOR_X = 200;
@@ -45,11 +45,14 @@ export async function clickPlay(page: Page): Promise<void> {
   await waitForScene(page, 'LEVEL_SELECT');
 }
 
-/** Click a level button (1-indexed). */
+/** Click a level button (1-indexed, on the current page). */
 export async function clickLevel(page: Page, levelNum: number): Promise<void> {
-  const col = (levelNum - 1) % LEVEL_COLS;
+  // levelNum is 1-indexed within the current page
+  const idx = levelNum - 1;
+  const col = idx % LEVEL_COLS;
+  const row = Math.floor(idx / LEVEL_COLS);
   const x = LEVEL_START_X + col * (LEVEL_BTN_SIZE + LEVEL_BTN_GAP);
-  const y = LEVEL_START_Y;
+  const y = LEVEL_START_Y + row * (LEVEL_BTN_SIZE + LEVEL_BTN_GAP);
   await clickAt(page, x, y);
   await waitForScene(page, 'PLAYING');
   await waitForTurnState(page, 'AIMING');
@@ -59,6 +62,28 @@ export async function clickLevel(page: Page, levelNum: number): Promise<void> {
 export async function clickBack(page: Page): Promise<void> {
   await clickAt(page, BACK_BUTTON.x, BACK_BUTTON.y);
   await waitForScene(page, 'MENU');
+}
+
+// Page navigation buttons (based on actual game layout: btnSize=80, gap=20, 5 cols)
+const GAME_BTN_SIZE = 80;
+const GAME_BTN_GAP = 20;
+const GAME_TOTAL_W = 5 * GAME_BTN_SIZE + 4 * GAME_BTN_GAP;
+const ARROW_SIZE = 40;
+const ARROW_Y = 180 + 2 * (GAME_BTN_SIZE + GAME_BTN_GAP); // Same calc as LevelSelectScene
+const RIGHT_ARROW_X = (1280 + GAME_TOTAL_W) / 2 + 15 + ARROW_SIZE / 2;
+const LEFT_ARROW_X = (1280 - GAME_TOTAL_W) / 2 - ARROW_SIZE - 15 + ARROW_SIZE / 2;
+
+/** Click the right arrow to go to next page in level select. */
+export async function clickNextPage(page: Page): Promise<void> {
+  await clickAt(page, RIGHT_ARROW_X, ARROW_Y);
+  // Small delay for page to update
+  await page.waitForTimeout(200);
+}
+
+/** Click the left arrow to go to previous page in level select. */
+export async function clickPrevPage(page: Page): Promise<void> {
+  await clickAt(page, LEFT_ARROW_X, ARROW_Y);
+  await page.waitForTimeout(200);
 }
 
 /** Navigate from menu to a specific level. */

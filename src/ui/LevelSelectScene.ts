@@ -9,9 +9,16 @@ import { freaky } from './freaky';
 const F_SELECT_LEVEL = freaky('SELECT LEVEL');
 const F_BACK = freaky('BACK');
 
+const LEVELS_PER_PAGE = 20;
+
 export class LevelSelectScene implements Scene {
   readonly sceneType = SceneType.LEVEL_SELECT;
   private game!: Game;
+  private currentPage: number = 0;
+
+  get totalPages(): number {
+    return Math.ceil(LEVELS.length / LEVELS_PER_PAGE);
+  }
 
   enter(game: Game): void {
     this.game = game;
@@ -40,15 +47,19 @@ export class LevelSelectScene implements Scene {
 
     // Level buttons
     const cols = 5;
-    const btnSize = 100;
-    const gap = 30;
+    const btnSize = 80;
+    const gap = 20;
     const totalW = cols * btnSize + (cols - 1) * gap;
     const startX = (GAME_WIDTH - totalW) / 2 + btnSize / 2;
-    const startY = 250;
+    const startY = 180;
 
-    for (let i = 0; i < LEVELS.length; i++) {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
+    const pageStart = this.currentPage * LEVELS_PER_PAGE;
+    const pageEnd = Math.min(pageStart + LEVELS_PER_PAGE, LEVELS.length);
+
+    for (let i = pageStart; i < pageEnd; i++) {
+      const pageIdx = i - pageStart;
+      const col = pageIdx % cols;
+      const row = Math.floor(pageIdx / cols);
       const x = startX + col * (btnSize + gap);
       const y = startY + row * (btnSize + gap);
       const levelNum = i + 1;
@@ -76,15 +87,15 @@ export class LevelSelectScene implements Scene {
       if (isUnlocked) {
         // Level number
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 36px Arial, sans-serif';
-        ctx.fillText(freaky(String(levelNum)), x, y - 8);
+        ctx.font = 'bold 28px Arial, sans-serif';
+        ctx.fillText(freaky(String(levelNum)), x, y - 6);
 
         // Stars
         for (let s = 0; s < 3; s++) {
-          const starX = x - 20 + s * 20;
-          const starY = y + 30;
+          const starX = x - 18 + s * 18;
+          const starY = y + 24;
           ctx.fillStyle = s < stars ? '#ffd700' : '#555';
-          ctx.font = '16px Arial, sans-serif';
+          ctx.font = '14px Arial, sans-serif';
           ctx.fillText('\u2605', starX, starY);
         }
       } else {
@@ -93,6 +104,54 @@ export class LevelSelectScene implements Scene {
         ctx.font = '36px Arial, sans-serif';
         ctx.fillText('\uD83D\uDD12', x, y);
       }
+    }
+
+    // Page navigation arrows
+    const arrowY = startY + 2 * (btnSize + gap); // Center vertically in grid area
+    const arrowSize = 40;
+
+    // Left arrow (hide on page 0)
+    if (this.currentPage > 0) {
+      const lx = (GAME_WIDTH - totalW) / 2 - arrowSize - 15;
+      ctx.fillStyle = '#5a7dbf';
+      this.roundRect(ctx, lx, arrowY - arrowSize / 2, arrowSize, arrowSize, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      this.roundRect(ctx, lx, arrowY - arrowSize / 2, arrowSize, arrowSize, 8);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 24px Arial, sans-serif';
+      ctx.fillText('\u25C0', lx + arrowSize / 2, arrowY);
+    }
+
+    // Right arrow (hide on last page)
+    if (this.currentPage < this.totalPages - 1) {
+      const rx = (GAME_WIDTH + totalW) / 2 + 15;
+      ctx.fillStyle = '#5a7dbf';
+      this.roundRect(ctx, rx, arrowY - arrowSize / 2, arrowSize, arrowSize, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      this.roundRect(ctx, rx, arrowY - arrowSize / 2, arrowSize, arrowSize, 8);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 24px Arial, sans-serif';
+      ctx.fillText('\u25B6', rx + arrowSize / 2, arrowY);
+    }
+
+    // Page dots
+    const dotY = GAME_HEIGHT - 130;
+    const dotSpacing = 20;
+    const totalDotW = (this.totalPages - 1) * dotSpacing;
+    const dotStartX = GAME_WIDTH / 2 - totalDotW / 2;
+
+    for (let p = 0; p < this.totalPages; p++) {
+      const dx = dotStartX + p * dotSpacing;
+      ctx.fillStyle = p === this.currentPage ? '#fff' : 'rgba(255,255,255,0.4)';
+      ctx.beginPath();
+      ctx.arc(dx, dotY, p === this.currentPage ? 6 : 4, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // Back button
@@ -134,17 +193,42 @@ export class LevelSelectScene implements Scene {
       return;
     }
 
-    // Check level buttons
+    // Check page navigation arrows
     const cols = 5;
-    const btnSize = 100;
-    const gap = 30;
+    const btnSize = 80;
+    const gap = 20;
     const totalW = cols * btnSize + (cols - 1) * gap;
     const startX = (GAME_WIDTH - totalW) / 2 + btnSize / 2;
-    const startY = 250;
+    const startY = 180;
+    const arrowY = startY + 2 * (btnSize + gap);
+    const arrowSize = 40;
 
-    for (let i = 0; i < LEVELS.length; i++) {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
+    // Left arrow
+    if (this.currentPage > 0) {
+      const lx = (GAME_WIDTH - totalW) / 2 - arrowSize - 15;
+      if (x >= lx && x <= lx + arrowSize && y >= arrowY - arrowSize / 2 && y <= arrowY + arrowSize / 2) {
+        this.currentPage--;
+        return;
+      }
+    }
+
+    // Right arrow
+    if (this.currentPage < this.totalPages - 1) {
+      const rx = (GAME_WIDTH + totalW) / 2 + 15;
+      if (x >= rx && x <= rx + arrowSize && y >= arrowY - arrowSize / 2 && y <= arrowY + arrowSize / 2) {
+        this.currentPage++;
+        return;
+      }
+    }
+
+    // Check level buttons
+    const pageStart = this.currentPage * LEVELS_PER_PAGE;
+    const pageEnd = Math.min(pageStart + LEVELS_PER_PAGE, LEVELS.length);
+
+    for (let i = pageStart; i < pageEnd; i++) {
+      const pageIdx = i - pageStart;
+      const col = pageIdx % cols;
+      const row = Math.floor(pageIdx / cols);
       const bx = startX + col * (btnSize + gap);
       const by = startY + row * (btnSize + gap);
       const levelNum = i + 1;

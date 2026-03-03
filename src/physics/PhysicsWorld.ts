@@ -1,6 +1,6 @@
 import Matter from 'matter-js';
 import { GRAVITY } from './constants';
-import { CollisionHandler, type CollisionEvent } from './CollisionHandler';
+import { CollisionHandler, type CollisionEvent, type SensorCollisionEvent } from './CollisionHandler';
 
 export class PhysicsWorld {
   readonly engine: Matter.Engine;
@@ -32,6 +32,14 @@ export class PhysicsWorld {
 
   getCollisionEvents(): CollisionEvent[] {
     return this.collisionHandler.drain();
+  }
+
+  getSensorCollisionEvents(): SensorCollisionEvent[] {
+    return this.collisionHandler.drainSensorEvents();
+  }
+
+  setGravity(y: number): void {
+    this.engine.gravity.y = y;
   }
 
   isWorldSettled(threshold: number): boolean {

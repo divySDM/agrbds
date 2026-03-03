@@ -25,6 +25,14 @@ export class ScoreManager {
     }
   }
 
+  addTNTDetonation(): void {
+    this._score += SCORE.TNT_DETONATION;
+  }
+
+  addGravityInverter(): void {
+    this._score += SCORE.GRAVITY_INVERTER;
+  }
+
   addRemainingBirdBonus(count: number): void {
     this._score += count * SCORE.REMAINING_BIRD;
   }

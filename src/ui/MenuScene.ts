@@ -2,10 +2,8 @@ import type { Scene } from '../game/Scene';
 import type { Game } from '../game/Game';
 import { SceneType, GAME_WIDTH, GAME_HEIGHT } from '../game/types';
 import { LevelSelectScene } from './LevelSelectScene';
-import { freaky } from './freaky';
-
-const F_TITLE = freaky('ANGRY BIRDS N');
-const F_PLAY = freaky('PLAY');
+const F_TITLE = 'ANGRY BIRDS';
+const F_PLAY = 'PLAY';
 
 export class MenuScene implements Scene {
   readonly sceneType = SceneType.MENU;

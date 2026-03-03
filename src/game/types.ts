@@ -76,6 +76,13 @@ export interface TestGameState {
   slingshotY: number;
 }
 
+export enum SpecialBlockType {
+  TNT = 'TNT',
+  GRAVITY_INVERTER = 'GRAVITY_INVERTER',
+  GEL_PAD = 'GEL_PAD',
+  TELEPORTER = 'TELEPORTER',
+}
+
 // Scoring constants
 export const SCORE = {
   PIG_DEFEAT: 5000,
@@ -83,6 +90,8 @@ export const SCORE = {
   BLOCK_ICE: 1000,
   BLOCK_STONE: 1500,
   REMAINING_BIRD: 10000,
+  TNT_DETONATION: 2000,
+  GRAVITY_INVERTER: 2500,
   STAR_2_THRESHOLD: 0.6,
   STAR_3_THRESHOLD: 0.85,
 } as const;

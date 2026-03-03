@@ -28,19 +28,38 @@ export class Ground {
     const screenX = -cameraX;
     const groundTop = this.y;
 
-    // Grass
+    // Grass layer
     ctx.fillStyle = '#4a8c3f';
-    ctx.fillRect(screenX, groundTop, WORLD_WIDTH, 8);
+    ctx.fillRect(screenX, groundTop, WORLD_WIDTH, 10);
+
+    // Dark dirt divider line
+    ctx.fillStyle = '#5a4a10';
+    ctx.fillRect(screenX, groundTop + 10, WORLD_WIDTH, 3);
 
     // Dirt
     ctx.fillStyle = '#8B6914';
-    ctx.fillRect(screenX, groundTop + 8, WORLD_WIDTH, 52);
+    ctx.fillRect(screenX, groundTop + 13, WORLD_WIDTH, 47);
 
-    // Grass detail tufts
-    ctx.fillStyle = '#5aa84f';
-    for (let x = screenX; x < screenX + WORLD_WIDTH; x += 30) {
+    // Grass blades (short line strokes)
+    ctx.strokeStyle = '#5ec44f';
+    ctx.lineWidth = 1.5;
+    for (let x = screenX; x < screenX + WORLD_WIDTH; x += 12) {
+      const h = 4 + Math.sin(x * 0.7) * 3;
+      const lean = Math.sin(x * 1.3) * 2;
       ctx.beginPath();
-      ctx.ellipse(x, groundTop, 8, 4, 0, 0, Math.PI * 2);
+      ctx.moveTo(x, groundTop);
+      ctx.lineTo(x + lean, groundTop - h);
+      ctx.stroke();
+    }
+
+    // Small stones/pebbles in dirt
+    ctx.fillStyle = '#a09070';
+    for (let x = screenX + 20; x < screenX + WORLD_WIDTH; x += 45) {
+      const px = x + Math.sin(x * 2.1) * 10;
+      const py = groundTop + 20 + Math.sin(x * 1.7) * 8;
+      const r = 2 + Math.sin(x * 3.3) * 1;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
       ctx.fill();
     }
   }

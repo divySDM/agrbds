@@ -1,6 +1,7 @@
 import { Game } from './game/Game';
 import { MenuScene } from './ui/MenuScene';
 import { LevelScene } from './game/LevelScene';
+import { LevelSelectScene } from './ui/LevelSelectScene';
 import type { TestGameState, SceneType } from './game/types';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -22,18 +23,22 @@ if (import.meta.env.DEV) {
         return { ...base, ...scene.getTestSnapshot() };
       }
 
-      return {
+      const result = {
         ...base,
         scene: (scene?.sceneType ?? 'MENU') as SceneType,
-        turnState: null,
+        turnState: null as null,
         score: 0,
         pigsAlive: 0,
         birdsRemaining: 0,
-        levelId: null,
+        levelId: null as null,
         cameraX: 0,
         slingshotX: 200,
         slingshotY: 600,
+        levelSelectPage: scene instanceof LevelSelectScene ? (scene as any).currentPage as number : undefined,
+        levelSelectTotalPages: scene instanceof LevelSelectScene ? (scene as any).totalPages as number : undefined,
       };
+
+      return result;
     },
   };
 }

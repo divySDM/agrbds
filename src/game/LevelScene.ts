@@ -1,7 +1,7 @@
 import Matter from 'matter-js';
 import type { Scene } from './Scene';
 import type { Game } from './Game';
-import { TurnState, SceneType, GAME_WIDTH, GAME_HEIGHT } from './types';
+import { TurnState, SceneType, GAME_WIDTH, GAME_HEIGHT, WORLD_WIDTH, SpecialBlockType } from './types';
 import type { TestGameState } from './types';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
 import { Camera } from './Camera';
@@ -13,14 +13,21 @@ import { loadLevel, type LoadedLevel } from '../levels/LevelLoader';
 import type { LevelData } from '../levels/types';
 import { SCORE } from './types';
 import type { Bird } from '../entities/Bird';
+import type { Block } from '../entities/Block';
 import { BombBird } from '../entities/BombBird';
 import { YellowBird } from '../entities/YellowBird';
-import { SLINGSHOT, TIMING, SCREEN_SHAKE, BIRD_BOUNDS } from '../physics/constants';
+import { SLINGSHOT, TIMING, SCREEN_SHAKE, BIRD_BOUNDS, TNT, GRAVITY as DEFAULT_GRAVITY, GRAVITY_INVERSION } from '../physics/constants';
 import { HUD } from '../ui/HUD';
 import { VictoryScreen } from '../ui/VictoryScreen';
 import { GameOverScreen } from '../ui/GameOverScreen';
 import { playLaunch, playExplosion, playPigDefeat, playBlockBreak, playImpact, playCombo, playBoost, playLevelLost, playLevelWon } from '../audio/SoundManager';
 // LevelSelectScene imported dynamically to avoid circular dependency
+
+interface PendingTNT {
+  block: Block;
+  delay: number;
+  chainDepth: number;
+}
 
 export class LevelScene implements Scene {
   private game!: Game;
@@ -56,10 +63,22 @@ export class LevelScene implements Scene {
   private titleCardTime: number = 0;
   private showTitleCard: boolean = true;
 
+  // Camera pre-pan
+  private prePanTime: number = 0;
+  private prePanDone: boolean = false;
+
   // Overlays
   private victoryScreen: VictoryScreen | null = null;
   private gameOverScreen: GameOverScreen | null = null;
   private finalStars: number = 0;
+
+  // Special block state
+  private pendingTNTs: PendingTNT[] = [];
+  private gravityInverted: boolean = false;
+  private gravityInversionTimer: number = 0;
+  private gravityTintAlpha: number = 0;
+  private teleportCooldowns: Map<string, number> = new Map();
+  private birdTeleportCount: number = 0;
 
   get sceneType(): SceneType {
     if (this.victoryScreen) return SceneType.VICTORY;
@@ -114,11 +133,26 @@ export class LevelScene implements Scene {
     this.titleCardTime = 0;
     this.showTitleCard = true;
 
-    this.camera.snapTo(this.level.slingshot.anchorX);
+    // Pre-pan: start camera at the midpoint of the level to show structures
+    this.prePanTime = 0;
+    this.prePanDone = false;
+    this.camera.snapTo(WORLD_WIDTH / 2);
+
+    // Reset special block state
+    this.pendingTNTs = [];
+    this.gravityInverted = false;
+    this.gravityInversionTimer = 0;
+    this.gravityTintAlpha = 0;
+    this.teleportCooldowns.clear();
+    this.birdTeleportCount = 0;
+    this.physics.setGravity(DEFAULT_GRAVITY.y);
+
     this.loadNextBird();
   }
 
   exit(): void {
+    // Guarantee gravity reset on level exit
+    this.physics.setGravity(DEFAULT_GRAVITY.y);
     this.physics.clear();
   }
 
@@ -132,6 +166,7 @@ export class LevelScene implements Scene {
       this.physics.addBody(bird.body);
     }
     this.turnManager.setState(TurnState.AIMING);
+    this.birdTeleportCount = 0;
   }
 
   update(dt: number): void {
@@ -145,8 +180,22 @@ export class LevelScene implements Scene {
       effectiveDt = dt * (TIMING.SLOW_MO_FACTOR + (1 - TIMING.SLOW_MO_FACTOR) * (1 - progress));
     }
 
+    // Camera pre-pan: show level, then ease back to slingshot
+    if (!this.prePanDone) {
+      this.prePanTime += dt;
+      if (this.prePanTime >= 1.5) {
+        this.prePanDone = true;
+        this.camera.returnToSlingshot(this.level.slingshot.anchorX);
+      }
+    }
+
     this.gameTime += effectiveDt;
     this.physics.update(effectiveDt);
+
+    // Update special block sensor bodies
+    for (const block of this.level.blocks) {
+      block.update(effectiveDt);
+    }
 
     // Process collisions
     const events = this.physics.getCollisionEvents();
@@ -156,6 +205,9 @@ export class LevelScene implements Scene {
       this.level.pigs,
       this.scoreManager
     );
+
+    // Process sensor collisions (gel pad & teleporter)
+    this.processSensorCollisions();
 
     // Screen shake and impact flash on significant impacts
     if (maxImpact > SCREEN_SHAKE.IMPACT_THRESHOLD) {
@@ -188,15 +240,40 @@ export class LevelScene implements Scene {
       this.lastDestructionTime = this.gameTime;
     }
 
-    // Remove destroyed blocks
+    // Remove destroyed blocks — check for special block triggers
     for (const block of this.level.blocks) {
       if (block.isDestroyed) {
+        // Trigger special block effects on destruction
+        if (block.specialType === SpecialBlockType.TNT && !block.activated) {
+          this.triggerTNT(block, 0);
+        } else if (block.specialType === SpecialBlockType.GRAVITY_INVERTER && !block.activated) {
+          this.triggerGravityInverter(block);
+        }
         this.spawnParticles(block.body.position.x, block.body.position.y, block.material);
         this.physics.removeBody(block.body);
+        if (block.sensorBody) {
+          this.physics.removeBody(block.sensorBody);
+        }
         playBlockBreak();
       }
     }
     this.level.blocks = this.level.blocks.filter((b) => !b.isDestroyed);
+
+    // Process pending TNT chain explosions
+    this.updatePendingTNTs(effectiveDt);
+
+    // Update gravity inversion timer
+    this.updateGravityInversion(effectiveDt);
+
+    // Update teleport cooldowns
+    for (const [id, cooldown] of this.teleportCooldowns) {
+      const newCooldown = cooldown - effectiveDt;
+      if (newCooldown <= 0) {
+        this.teleportCooldowns.delete(id);
+      } else {
+        this.teleportCooldowns.set(id, newCooldown);
+      }
+    }
 
     // Remove destroyed pigs
     for (const pig of this.level.pigs) {
@@ -267,10 +344,14 @@ export class LevelScene implements Scene {
       }
     }
 
+    // Account for gravity inversion in settling — don't settle while gravity is inverted
+    const hasPendingSpecialEffects = this.gravityInverted || this.pendingTNTs.length > 0;
+
     this.turnManager.update(
       this.physics,
       allDefeated,
-      !this.level.birdQueue.isEmpty()
+      !this.level.birdQueue.isEmpty(),
+      hasPendingSpecialEffects
     );
 
     // Late win check
@@ -352,6 +433,11 @@ export class LevelScene implements Scene {
       this.victoryScreen.update(effectiveDt);
     }
 
+    // Update game over screen animation
+    if (this.gameOverScreen) {
+      this.gameOverScreen.update(effectiveDt);
+    }
+
     // Fade tutorial
     if (this.showTutorial && this.gameTime > 3) {
       this.tutorialAlpha -= effectiveDt * 2;
@@ -359,6 +445,183 @@ export class LevelScene implements Scene {
         this.showTutorial = false;
         this.tutorialAlpha = 0;
       }
+    }
+  }
+
+  // --- Special Block Triggers ---
+
+  private triggerTNT(block: Block, chainDepth: number): void {
+    if (block.activated || chainDepth >= TNT.maxChainDepth) return;
+    block.activated = true;
+
+    const center = block.body.position;
+    this.physics.applyExplosion(center, TNT.blastRadius, TNT.blastForce);
+    this.scoreManager.addTNTDetonation();
+
+    // Explosion VFX
+    this.explosionEffects.push({
+      x: center.x,
+      y: center.y,
+      maxRadius: TNT.blastRadius,
+      time: 0,
+      duration: TIMING.EXPLOSION_DURATION,
+    });
+    this.camera.shake(SCREEN_SHAKE.BOMB_INTENSITY, 0.3);
+    this.spawnFloatingText(center.x, center.y - 30, `+${SCORE.TNT_DETONATION}`, '#ff4400');
+    playExplosion();
+
+    // Apply radial damage to blocks and pigs within blast radius
+    for (const b of this.level.blocks) {
+      if (b === block || b.isDestroyed) continue;
+      const dx = b.body.position.x - center.x;
+      const dy = b.body.position.y - center.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= TNT.blastRadius) {
+        const falloff = 1 - dist / TNT.blastRadius;
+        b.applyDamage(falloff * 120);
+        // Queue chain TNT explosions with stagger
+        if (b.isDestroyed && b.specialType === SpecialBlockType.TNT && !b.activated) {
+          this.pendingTNTs.push({ block: b, delay: TNT.chainDelay, chainDepth: chainDepth + 1 });
+        }
+      }
+    }
+    for (const pig of this.level.pigs) {
+      if (pig.isDestroyed) continue;
+      const dx = pig.body.position.x - center.x;
+      const dy = pig.body.position.y - center.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= TNT.blastRadius) {
+        const falloff = 1 - dist / TNT.blastRadius;
+        pig.applyDamage(falloff * 120);
+      }
+    }
+  }
+
+  private updatePendingTNTs(dt: number): void {
+    const ready: PendingTNT[] = [];
+    this.pendingTNTs = this.pendingTNTs.filter((pt) => {
+      pt.delay -= dt;
+      if (pt.delay <= 0) {
+        ready.push(pt);
+        return false;
+      }
+      return true;
+    });
+    for (const pt of ready) {
+      this.triggerTNT(pt.block, pt.chainDepth);
+    }
+  }
+
+  private triggerGravityInverter(block: Block): void {
+    if (block.activated) return;
+    block.activated = true;
+    this.scoreManager.addGravityInverter();
+    this.spawnFloatingText(block.body.position.x, block.body.position.y - 30, 'GRAVITY INVERTED!', '#bb66ff');
+    this.spawnFloatingText(block.body.position.x, block.body.position.y - 60, `+${SCORE.GRAVITY_INVERTER}`, '#bb66ff');
+
+    // Flip gravity (or restart timer if already inverted)
+    this.gravityInverted = true;
+    this.gravityInversionTimer = GRAVITY_INVERSION.duration;
+    this.physics.setGravity(-DEFAULT_GRAVITY.y);
+  }
+
+  private updateGravityInversion(dt: number): void {
+    if (!this.gravityInverted) return;
+
+    this.gravityInversionTimer -= dt;
+    this.gravityTintAlpha = Math.min(0.15, this.gravityTintAlpha + dt * 0.5);
+
+    if (this.gravityInversionTimer <= 0) {
+      this.gravityInverted = false;
+      this.gravityTintAlpha = 0;
+      this.physics.setGravity(DEFAULT_GRAVITY.y);
+    }
+  }
+
+  private processSensorCollisions(): void {
+    const sensorEvents = this.physics.getSensorCollisionEvents();
+    for (const event of sensorEvents) {
+      const sensorEntity = (event.sensorBody as any).gameEntity as Block | undefined;
+      if (!sensorEntity || sensorEntity.isDestroyed) continue;
+
+      const otherEntity = (event.otherBody as any).gameEntity;
+      // Only interact with birds
+      if (!otherEntity || !(otherEntity as any).hasLaunched) continue;
+      const bird = otherEntity as Bird;
+
+      if (sensorEntity.specialType === SpecialBlockType.GEL_PAD) {
+        this.handleGelPadBounce(sensorEntity, bird);
+      } else if (sensorEntity.specialType === SpecialBlockType.TELEPORTER) {
+        this.handleTeleport(sensorEntity, bird);
+      }
+    }
+  }
+
+  private handleGelPadBounce(_pad: Block, bird: Bird): void {
+    const vel = bird.body.velocity;
+    // Amplify and reflect velocity (bounce upward primarily)
+    const multiplier = 1.8;
+    const newVy = -Math.abs(vel.y) * multiplier;
+    const newVx = vel.x * multiplier;
+    Matter.Body.setVelocity(bird.body, { x: newVx, y: newVy });
+
+    // VFX
+    this.impactFlashes.push({
+      x: bird.body.position.x,
+      y: bird.body.position.y,
+      time: 0,
+      maxTime: 0.15,
+    });
+    this.spawnFloatingText(bird.body.position.x, bird.body.position.y - 20, 'BOUNCE!', '#00e5a0');
+    playImpact();
+  }
+
+  private handleTeleport(portal: Block, bird: Bird): void {
+    const linked = portal.linkedTeleporter;
+    if (!linked || linked.isDestroyed) return;
+
+    // Check cooldown
+    if (this.teleportCooldowns.has(portal.id) || this.teleportCooldowns.has(linked.id)) return;
+
+    // Max teleports per bird
+    if (this.birdTeleportCount >= 3) return;
+
+    // Warp bird to linked teleporter position
+    const exitPos = linked.body.position;
+    Matter.Body.setPosition(bird.body, { x: exitPos.x, y: exitPos.y });
+
+    // Preserve velocity magnitude, reverse direction
+    const vel = bird.body.velocity;
+    Matter.Body.setVelocity(bird.body, { x: -vel.x, y: -vel.y });
+
+    // Set cooldowns
+    this.teleportCooldowns.set(portal.id, 0.5);
+    this.teleportCooldowns.set(linked.id, 0.5);
+    this.birdTeleportCount++;
+
+    // VFX at entry and exit
+    this.spawnTeleportParticles(portal.body.position.x, portal.body.position.y);
+    this.spawnTeleportParticles(exitPos.x, exitPos.y);
+    this.spawnFloatingText(exitPos.x, exitPos.y - 20, 'WARP!', '#6666ff');
+    playImpact();
+  }
+
+  private spawnTeleportParticles(x: number, y: number): void {
+    const colors = ['#3366ff', '#ff6600', '#ffffff'];
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 120;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 3 + Math.random() * 5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        life: 0.5 + Math.random() * 0.3,
+        maxLife: 0.8,
+        shape: 'square',
+      });
     }
   }
 
@@ -372,6 +635,9 @@ export class LevelScene implements Scene {
     gradient.addColorStop(1, '#b0e0ff');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    // Background hills (parallax scenery)
+    this.renderBackground(ctx);
 
     // Clouds
     this.renderClouds(ctx);
@@ -513,6 +779,12 @@ export class LevelScene implements Scene {
     ctx.globalAlpha = 1;
 
     ctx.restore();
+
+    // Gravity inversion purple tint overlay
+    if (this.gravityTintAlpha > 0) {
+      ctx.fillStyle = `rgba(100, 0, 200, ${this.gravityTintAlpha})`;
+      ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    }
 
     // HUD (not affected by shake)
     this.hud.render(ctx, this.scoreManager.score, this.level.birdQueue);
@@ -660,6 +932,49 @@ export class LevelScene implements Scene {
     ctx.font = '20px Arial, sans-serif';
     ctx.fillStyle = '#ccc';
     ctx.fillText('Press ESC or tap to resume', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20);
+  }
+
+  private renderBackground(ctx: CanvasRenderingContext2D): void {
+    const groundTop = GAME_HEIGHT - 60;
+
+    // Far hills — dark blue-green, 10% parallax
+    ctx.fillStyle = '#3a6a4a';
+    ctx.beginPath();
+    ctx.moveTo(0, groundTop);
+    for (let x = 0; x <= GAME_WIDTH; x += 4) {
+      const wx = x + this.camera.x * 0.1;
+      const h = 80 + Math.sin(wx * 0.005) * 50 + Math.sin(wx * 0.012) * 30;
+      ctx.lineTo(x, groundTop - h);
+    }
+    ctx.lineTo(GAME_WIDTH, groundTop);
+    ctx.closePath();
+    ctx.fill();
+
+    // Mid hills — green, 20% parallax
+    ctx.fillStyle = '#4a8a3f';
+    ctx.beginPath();
+    ctx.moveTo(0, groundTop);
+    for (let x = 0; x <= GAME_WIDTH; x += 4) {
+      const wx = x + this.camera.x * 0.2;
+      const h = 40 + Math.sin(wx * 0.008) * 35 + Math.sin(wx * 0.02) * 20;
+      ctx.lineTo(x, groundTop - h);
+    }
+    ctx.lineTo(GAME_WIDTH, groundTop);
+    ctx.closePath();
+    ctx.fill();
+
+    // Bush clusters on the ground layer (30% parallax)
+    ctx.fillStyle = '#3d7a30';
+    const bushPositions = [60, 200, 380, 520, 700, 900, 1050, 1200];
+    for (const bx of bushPositions) {
+      const sx = bx - this.camera.x * 0.3;
+      if (sx < -40 || sx > GAME_WIDTH + 40) continue;
+      ctx.beginPath();
+      ctx.arc(sx, groundTop - 8, 16, 0, Math.PI * 2);
+      ctx.arc(sx - 12, groundTop - 4, 12, 0, Math.PI * 2);
+      ctx.arc(sx + 14, groundTop - 5, 13, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   private renderClouds(ctx: CanvasRenderingContext2D): void {
@@ -830,6 +1145,8 @@ export class LevelScene implements Scene {
       }
     }
     if (key === 'r' || key === 'R') {
+      // Guarantee gravity reset on retry
+      this.physics.setGravity(DEFAULT_GRAVITY.y);
       this.game.sceneManager.switchTo(new LevelScene(this.levelData));
     }
   }

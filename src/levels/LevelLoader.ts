@@ -20,9 +20,24 @@ export function loadLevel(data: LevelData, physics: PhysicsWorld): LoadedLevel {
 
   const blocks: Block[] = [];
   for (const def of data.blocks) {
-    const block = new Block(def.x, def.y, def.width, def.height, def.material);
+    const block = new Block(def.x, def.y, def.width, def.height, def.material, def.special);
     physics.addBody(block.body);
+    if (block.sensorBody) {
+      physics.addBody(block.sensorBody);
+    }
     blocks.push(block);
+  }
+
+  // Link teleporter pairs
+  if (data.teleporterPairs) {
+    for (const pair of data.teleporterPairs) {
+      const blockA = blocks[pair.blockIndexA];
+      const blockB = blocks[pair.blockIndexB];
+      if (blockA && blockB) {
+        blockA.linkedTeleporter = blockB;
+        blockB.linkedTeleporter = blockA;
+      }
+    }
   }
 
   const pigs: Pig[] = [];

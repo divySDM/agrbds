@@ -72,12 +72,31 @@ export class Slingshot {
     ctx.fillStyle = '#5a2d0c';
     ctx.fillRect(x - 6, y + 14, 12, groundTop - (y + 14));
 
-    // Back arm
+    // Back arm (angled outward for Y-fork)
+    ctx.save();
     ctx.fillStyle = '#6b3a1f';
-    ctx.fillRect(x - 16, y - 50, 8, 55);
+    ctx.translate(x - 6, y);
+    ctx.rotate(-0.2);
+    ctx.fillRect(-5, -55, 8, 55);
+    ctx.restore();
 
-    // Front arm
-    ctx.fillRect(x + 8, y - 50, 8, 55);
+    // Front arm (angled outward for Y-fork)
+    ctx.save();
+    ctx.fillStyle = '#6b3a1f';
+    ctx.translate(x + 6, y);
+    ctx.rotate(0.2);
+    ctx.fillRect(-3, -55, 8, 55);
+    ctx.restore();
+
+    // Wood grain lines on pole
+    ctx.strokeStyle = 'rgba(90, 45, 12, 0.4)';
+    ctx.lineWidth = 1;
+    for (let gy = y + 20; gy < groundTop; gy += 10) {
+      ctx.beginPath();
+      ctx.moveTo(x - 4, gy);
+      ctx.lineTo(x + 4, gy);
+      ctx.stroke();
+    }
 
     // Base
     ctx.fillStyle = '#5a2d0c';
