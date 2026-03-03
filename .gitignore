@@ -1,3 +1,6 @@
 inspiration/
 node_modules/
 dist/
+docs/sprints/
+CLAUDE.md
+.claude/
