@@ -1,4 +1,5 @@
-import { SLINGSHOT } from '../physics/constants';
+import { SLINGSHOT, BIRD_PROPERTIES, GROUND_HEIGHT } from '../physics/constants';
+import { GAME_HEIGHT } from '../game/types';
 import type { Vec2 } from '../game/types';
 
 export class Slingshot {
@@ -37,6 +38,11 @@ export class Slingshot {
       this.dragX = pointerX;
       this.dragY = pointerY;
     }
+
+    const maxY = GAME_HEIGHT - GROUND_HEIGHT - BIRD_PROPERTIES.radius;
+    if (this.dragY > maxY) {
+      this.dragY = maxY;
+    }
   }
 
   release(): Vec2 {
@@ -60,6 +66,11 @@ export class Slingshot {
   render(ctx: CanvasRenderingContext2D, cameraX: number, birdX?: number, birdY?: number): void {
     const x = this.anchorX - cameraX;
     const y = this.anchorY;
+    const groundTop = GAME_HEIGHT - 60;
+
+    // Support pole from base to ground
+    ctx.fillStyle = '#5a2d0c';
+    ctx.fillRect(x - 6, y + 14, 12, groundTop - (y + 14));
 
     // Back arm
     ctx.fillStyle = '#6b3a1f';
@@ -77,8 +88,15 @@ export class Slingshot {
       const bx = birdX - cameraX;
       const by = birdY;
 
-      ctx.strokeStyle = '#3d2b1f';
-      ctx.lineWidth = 4;
+      // Color shifts with tension: brown → orange → red
+      const dx = birdX - this.anchorX;
+      const dy = birdY - this.anchorY;
+      const tension = Math.min(Math.sqrt(dx * dx + dy * dy) / SLINGSHOT.maxDrag, 1);
+      const r = Math.round(61 + tension * 194);
+      const g = Math.round(43 - tension * 43);
+      const b = Math.round(31 - tension * 31);
+      ctx.strokeStyle = `rgb(${r},${g},${b})`;
+      ctx.lineWidth = 4 + tension * 2;
 
       // Back band
       ctx.beginPath();

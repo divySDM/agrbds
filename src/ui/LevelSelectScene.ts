@@ -4,6 +4,10 @@ import { SceneType, GAME_WIDTH, GAME_HEIGHT } from '../game/types';
 import { LevelScene } from '../game/LevelScene';
 import { LEVELS } from '../levels/index';
 import { MenuScene } from './MenuScene';
+import { freaky } from './freaky';
+
+const F_SELECT_LEVEL = freaky('SELECT LEVEL');
+const F_BACK = freaky('BACK');
 
 export class LevelSelectScene implements Scene {
   readonly sceneType = SceneType.LEVEL_SELECT;
@@ -32,7 +36,7 @@ export class LevelSelectScene implements Scene {
     // Title
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 48px Arial, sans-serif';
-    ctx.fillText('SELECT LEVEL', GAME_WIDTH / 2, 80);
+    ctx.fillText(F_SELECT_LEVEL, GAME_WIDTH / 2, 80);
 
     // Level buttons
     const cols = 5;
@@ -44,8 +48,9 @@ export class LevelSelectScene implements Scene {
 
     for (let i = 0; i < LEVELS.length; i++) {
       const col = i % cols;
+      const row = Math.floor(i / cols);
       const x = startX + col * (btnSize + gap);
-      const y = startY;
+      const y = startY + row * (btnSize + gap);
       const levelNum = i + 1;
       const isUnlocked = levelNum <= this.game.highestUnlocked;
       const stars = this.game.levelStars.get(levelNum) ?? 0;
@@ -72,7 +77,7 @@ export class LevelSelectScene implements Scene {
         // Level number
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 36px Arial, sans-serif';
-        ctx.fillText(String(levelNum), x, y - 8);
+        ctx.fillText(freaky(String(levelNum)), x, y - 8);
 
         // Stars
         for (let s = 0; s < 3; s++) {
@@ -96,7 +101,7 @@ export class LevelSelectScene implements Scene {
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 22px Arial, sans-serif';
-    ctx.fillText('BACK', 100, GAME_HEIGHT - 55);
+    ctx.fillText(F_BACK, 100, GAME_HEIGHT - 55);
 
     ctx.restore();
   }
@@ -139,8 +144,9 @@ export class LevelSelectScene implements Scene {
 
     for (let i = 0; i < LEVELS.length; i++) {
       const col = i % cols;
+      const row = Math.floor(i / cols);
       const bx = startX + col * (btnSize + gap);
-      const by = startY;
+      const by = startY + row * (btnSize + gap);
       const levelNum = i + 1;
 
       if (

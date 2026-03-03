@@ -40,4 +40,8 @@ export class SceneManager {
   onPointerUp(x: number, y: number): void {
     this.currentScene?.onPointerUp?.(x, y);
   }
+
+  onKeyDown(key: string): void {
+    this.currentScene?.onKeyDown?.(key);
+  }
 }

@@ -4,39 +4,50 @@ import type { Pig } from '../entities/Pig';
 import type { ScoreManager } from './ScoreManager';
 import { DAMAGE_SCALE } from '../physics/constants';
 
+export interface CollisionResult {
+  maxImpact: number;
+  destroyedCount: number;
+}
+
 export class RulesEngine {
   processCollisions(
     events: CollisionEvent[],
     blocks: Block[],
     pigs: Pig[],
     scoreManager: ScoreManager
-  ): void {
+  ): CollisionResult {
+    let maxImpact = 0;
+    let destroyedCount = 0;
+    const blockSet = new Set(blocks);
+    const pigSet = new Set(pigs);
+
     for (const event of events) {
       const entityA = (event.bodyA as any).gameEntity;
       const entityB = (event.bodyB as any).gameEntity;
       const damage = event.impactSpeed * DAMAGE_SCALE;
+      maxImpact = Math.max(maxImpact, event.impactSpeed);
 
-      // Apply damage to blocks
       for (const entity of [entityA, entityB]) {
         if (!entity) continue;
 
-        const block = blocks.find((b) => b === entity && !b.isDestroyed);
-        if (block) {
-          block.applyDamage(damage);
-          if (block.isDestroyed) {
-            scoreManager.addBlockDestroyed(block.material);
+        if (blockSet.has(entity) && !entity.isDestroyed) {
+          entity.applyDamage(damage);
+          if (entity.isDestroyed) {
+            scoreManager.addBlockDestroyed(entity.material);
+            destroyedCount++;
           }
         }
 
-        const pig = pigs.find((p) => p === entity && !p.isDestroyed);
-        if (pig) {
-          pig.applyDamage(damage);
-          if (pig.isDestroyed) {
+        if (pigSet.has(entity) && !entity.isDestroyed) {
+          entity.applyDamage(damage);
+          if (entity.isDestroyed) {
             scoreManager.addPigDefeat();
+            destroyedCount++;
           }
         }
       }
     }
+    return { maxImpact, destroyedCount };
   }
 
   allPigsDefeated(pigs: Pig[]): boolean {

@@ -34,6 +34,7 @@ export class Pig implements GameEntity {
   }
 
   applyDamage(amount: number): void {
+    if (this.isDestroyed) return;
     this.health -= amount;
     if (this.health <= 0) {
       this.isDestroyed = true;

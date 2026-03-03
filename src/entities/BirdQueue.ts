@@ -1,6 +1,7 @@
 import { BirdType } from '../game/types';
 import { Bird } from './Bird';
 import { BombBird } from './BombBird';
+import { YellowBird } from './YellowBird';
 
 export class BirdQueue {
   private queue: BirdType[];
@@ -16,6 +17,9 @@ export class BirdQueue {
     this.currentIndex++;
     if (type === BirdType.BOMB) {
       return new BombBird(x, y);
+    }
+    if (type === BirdType.YELLOW) {
+      return new YellowBird(x, y);
     }
     return new Bird(x, y, BirdType.RED);
   }

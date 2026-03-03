@@ -43,12 +43,15 @@ export class Block implements GameEntity {
   }
 
   applyDamage(amount: number): void {
+    if (this.isDestroyed) return;
     this.health -= amount;
     if (this.health <= 0) {
       this._damageState = DamageState.DESTROYED;
       this.isDestroyed = true;
     } else if (this.health < this.maxHealth * 0.5) {
       this._damageState = DamageState.CRACKED;
+    } else if (this.health < this.maxHealth * 0.75) {
+      this._damageState = DamageState.LIGHT_DAMAGE;
     }
   }
 
@@ -67,7 +70,8 @@ export class Block implements GameEntity {
     ctx.rotate(angle);
 
     // Block body
-    const color = this._damageState === DamageState.CRACKED ? mat.crackedColor : mat.color;
+    const damaged = this._damageState === DamageState.CRACKED || this._damageState === DamageState.LIGHT_DAMAGE;
+    const color = damaged ? mat.crackedColor : mat.color;
     ctx.fillStyle = color;
     ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
@@ -76,7 +80,17 @@ export class Block implements GameEntity {
     ctx.lineWidth = 1;
     ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
 
-    // Crack overlay
+    // Light damage - small crack
+    if (this._damageState === DamageState.LIGHT_DAMAGE) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-this.width * 0.15, -this.height * 0.1);
+      ctx.lineTo(this.width * 0.1, this.height * 0.15);
+      ctx.stroke();
+    }
+
+    // Heavy crack overlay
     if (this._damageState === DamageState.CRACKED) {
       ctx.strokeStyle = 'rgba(0,0,0,0.4)';
       ctx.lineWidth = 1.5;
@@ -88,6 +102,10 @@ export class Block implements GameEntity {
       ctx.beginPath();
       ctx.moveTo(this.width * 0.1, this.height * 0.1);
       ctx.lineTo(this.width * 0.3, this.height * 0.3);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-this.width * 0.2, this.height * 0.2);
+      ctx.lineTo(-this.width * 0.05, -this.height * 0.05);
       ctx.stroke();
     }
 

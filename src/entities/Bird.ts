@@ -20,8 +20,11 @@ export class Bird implements GameEntity {
         category: COLLISION_CATEGORIES.BIRD,
       },
       label: 'bird',
-      isStatic: true, // Static until launched
     });
+    // Set static AFTER creation so Matter.js saves original mass in _original.
+    // Passing isStatic in create options sets mass=Infinity without saving,
+    // which prevents setStatic(false) from restoring finite mass on launch.
+    Matter.Body.setStatic(this.body, true);
     (this.body as any).gameEntity = this;
   }
 
@@ -44,134 +47,200 @@ export class Bird implements GameEntity {
     const y = this.body.position.y - camera.y;
     const r = BIRD_PROPERTIES.radius;
 
-    if (this.type === BirdType.RED) {
-      this.renderRedBird(ctx, x, y, r);
-    } else {
-      this.renderBombBird(ctx, x, y, r);
+    // Rotate bird in direction of travel when launched
+    const vel = this.body.velocity;
+    const rotation = this.hasLaunched && (vel.x !== 0 || vel.y !== 0)
+      ? Math.atan2(vel.y, vel.x)
+      : 0;
+
+    ctx.save();
+    ctx.translate(x, y);
+    if (rotation !== 0) {
+      ctx.rotate(rotation);
     }
+
+    if (this.type === BirdType.RED) {
+      this.renderRedBird(ctx, r);
+    } else if (this.type === BirdType.YELLOW) {
+      this.renderYellowBird(ctx, r);
+    } else {
+      this.renderBombBird(ctx, r);
+    }
+
+    ctx.restore();
   }
 
-  private renderRedBird(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
-    // Body
+  private renderRedBird(ctx: CanvasRenderingContext2D, r: number): void {
     ctx.fillStyle = '#e03030';
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Belly
     ctx.fillStyle = '#ecc8a0';
     ctx.beginPath();
-    ctx.arc(x, y + 4, r * 0.6, 0, Math.PI * 2);
+    ctx.arc(0, 4, r * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.ellipse(-5, -4, 6, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(5, -4, 6, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(-3, -3, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(7, -3, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-11, -12);
+    ctx.lineTo(-2, -8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(11, -12);
+    ctx.lineTo(2, -8);
+    ctx.stroke();
+
+    ctx.fillStyle = '#f5a623';
+    ctx.beginPath();
+    ctx.moveTo(2, 0);
+    ctx.lineTo(14, 2);
+    ctx.lineTo(2, 6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#c02020';
+    ctx.beginPath();
+    ctx.moveTo(-2, -r);
+    ctx.lineTo(2, -r - 10);
+    ctx.lineTo(6, -r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private renderYellowBird(ctx: CanvasRenderingContext2D, r: number): void {
+    // Triangular yellow bird
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.moveTo(r + 4, 0);
+    ctx.lineTo(-r * 0.8, -r * 0.9);
+    ctx.lineTo(-r * 0.8, r * 0.9);
+    ctx.closePath();
+    ctx.fill();
+
+    // Body circle overlay
+    ctx.fillStyle = '#ffe44d';
+    ctx.beginPath();
+    ctx.arc(-2, 0, r * 0.7, 0, Math.PI * 2);
     ctx.fill();
 
     // Eyes
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.ellipse(x - 5, y - 4, 6, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(-2, -4, 5, 6, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(x + 5, y - 4, 6, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(6, -4, 5, 6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Pupils
     ctx.fillStyle = '#000';
     ctx.beginPath();
-    ctx.arc(x - 3, y - 3, 2.5, 0, Math.PI * 2);
+    ctx.arc(0, -3, 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(x + 7, y - 3, 2.5, 0, Math.PI * 2);
+    ctx.arc(8, -3, 2, 0, Math.PI * 2);
     ctx.fill();
 
     // Angry eyebrows
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(x - 11, y - 12);
-    ctx.lineTo(x - 2, y - 8);
+    ctx.moveTo(-7, -11);
+    ctx.lineTo(0, -7);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x + 11, y - 12);
-    ctx.lineTo(x + 2, y - 8);
+    ctx.moveTo(13, -11);
+    ctx.lineTo(6, -7);
     ctx.stroke();
 
     // Beak
-    ctx.fillStyle = '#f5a623';
+    ctx.fillStyle = '#ff8c00';
     ctx.beginPath();
-    ctx.moveTo(x + 2, y);
-    ctx.lineTo(x + 14, y + 2);
-    ctx.lineTo(x + 2, y + 6);
+    ctx.moveTo(8, 0);
+    ctx.lineTo(16, 2);
+    ctx.lineTo(8, 5);
     ctx.closePath();
     ctx.fill();
 
-    // Head feathers
-    ctx.fillStyle = '#c02020';
+    // Head crest
+    ctx.fillStyle = '#cc9900';
     ctx.beginPath();
-    ctx.moveTo(x - 2, y - r);
-    ctx.lineTo(x + 2, y - r - 10);
-    ctx.lineTo(x + 6, y - r);
+    ctx.moveTo(-4, -r * 0.85);
+    ctx.lineTo(0, -r - 8);
+    ctx.lineTo(4, -r * 0.85);
     ctx.closePath();
     ctx.fill();
   }
 
-  private renderBombBird(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
-    // Body
+  private renderBombBird(ctx: CanvasRenderingContext2D, r: number): void {
     ctx.fillStyle = '#2a2a2a';
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Gray belly highlight
     ctx.fillStyle = '#4a4a4a';
     ctx.beginPath();
-    ctx.arc(x, y + 3, r * 0.55, 0, Math.PI * 2);
+    ctx.arc(0, 3, r * 0.55, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eyes
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.ellipse(x - 5, y - 3, 5, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(-5, -3, 5, 6, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(x + 5, y - 3, 5, 6, 0, 0, Math.PI * 2);
+    ctx.ellipse(5, -3, 5, 6, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Pupils (angry red tint)
     ctx.fillStyle = '#800';
     ctx.beginPath();
-    ctx.arc(x - 4, y - 2, 2.5, 0, Math.PI * 2);
+    ctx.arc(-4, -2, 2.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(x + 6, y - 2, 2.5, 0, Math.PI * 2);
+    ctx.arc(6, -2, 2.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Angry eyebrows
     ctx.strokeStyle = '#555';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(x - 10, y - 11);
-    ctx.lineTo(x - 2, y - 7);
+    ctx.moveTo(-10, -11);
+    ctx.lineTo(-2, -7);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x + 10, y - 11);
-    ctx.lineTo(x + 2, y - 7);
+    ctx.moveTo(10, -11);
+    ctx.lineTo(2, -7);
     ctx.stroke();
 
-    // Fuse on top
     ctx.strokeStyle = '#888';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(x, y - r);
-    ctx.quadraticCurveTo(x + 5, y - r - 10, x + 2, y - r - 14);
+    ctx.moveTo(0, -r);
+    ctx.quadraticCurveTo(5, -r - 10, 2, -r - 14);
     ctx.stroke();
 
-    // Fuse spark
     ctx.fillStyle = '#ff6600';
     ctx.beginPath();
-    ctx.arc(x + 2, y - r - 14, 4, 0, Math.PI * 2);
+    ctx.arc(2, -r - 14, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#ffcc00';
     ctx.beginPath();
-    ctx.arc(x + 2, y - r - 14, 2, 0, Math.PI * 2);
+    ctx.arc(2, -r - 14, 2, 0, Math.PI * 2);
     ctx.fill();
   }
 

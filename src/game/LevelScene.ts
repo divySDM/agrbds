@@ -11,12 +11,15 @@ import { ScoreManager } from './ScoreManager';
 import { TrajectoryPreview } from './TrajectoryPreview';
 import { loadLevel, type LoadedLevel } from '../levels/LevelLoader';
 import type { LevelData } from '../levels/types';
+import { SCORE } from './types';
 import type { Bird } from '../entities/Bird';
 import { BombBird } from '../entities/BombBird';
-import { SLINGSHOT } from '../physics/constants';
+import { YellowBird } from '../entities/YellowBird';
+import { SLINGSHOT, TIMING, SCREEN_SHAKE, BIRD_BOUNDS } from '../physics/constants';
 import { HUD } from '../ui/HUD';
 import { VictoryScreen } from '../ui/VictoryScreen';
 import { GameOverScreen } from '../ui/GameOverScreen';
+import { playLaunch, playExplosion, playPigDefeat, playBlockBreak, playImpact, playCombo, playBoost, playLevelLost, playLevelWon } from '../audio/SoundManager';
 // LevelSelectScene imported dynamically to avoid circular dependency
 
 export class LevelScene implements Scene {
@@ -38,6 +41,20 @@ export class LevelScene implements Scene {
   private explosionEffects: ExplosionEffect[] = [];
   private nextBirdDelay: number = 0;
   private flyingTime: number = 0;
+  private flightTrail: { x: number; y: number }[] = [];
+
+  // Juice features
+  private floatingTexts: FloatingText[] = [];
+  private slowMoTime: number = 0;
+  private comboCount: number = 0;
+  private lastDestructionTime: number = 0;
+  private gameTime: number = 0;
+  private isPaused: boolean = false;
+  private showTutorial: boolean = false;
+  private tutorialAlpha: number = 1;
+  private impactFlashes: ImpactFlash[] = [];
+  private titleCardTime: number = 0;
+  private showTitleCard: boolean = true;
 
   // Overlays
   private victoryScreen: VictoryScreen | null = null;
@@ -82,8 +99,20 @@ export class LevelScene implements Scene {
     this.launchedBirds = [];
     this.particles = [];
     this.explosionEffects = [];
+    this.floatingTexts = [];
     this.victoryScreen = null;
     this.gameOverScreen = null;
+    this.slowMoTime = 0;
+    this.comboCount = 0;
+    this.lastDestructionTime = 0;
+    this.gameTime = 0;
+    this.isPaused = false;
+
+    this.showTutorial = this.levelData.id === 1;
+    this.tutorialAlpha = 1;
+    this.impactFlashes = [];
+    this.titleCardTime = 0;
+    this.showTitleCard = true;
 
     this.camera.snapTo(this.level.slingshot.anchorX);
     this.loadNextBird();
@@ -106,22 +135,65 @@ export class LevelScene implements Scene {
   }
 
   update(dt: number): void {
-    this.physics.update(dt);
+    if (this.isPaused) return;
+
+    // Apply slow-motion
+    let effectiveDt = dt;
+    if (this.slowMoTime > 0) {
+      this.slowMoTime -= dt;
+      const progress = Math.max(0, this.slowMoTime / TIMING.SLOW_MO_DURATION);
+      effectiveDt = dt * (TIMING.SLOW_MO_FACTOR + (1 - TIMING.SLOW_MO_FACTOR) * (1 - progress));
+    }
+
+    this.gameTime += effectiveDt;
+    this.physics.update(effectiveDt);
 
     // Process collisions
     const events = this.physics.getCollisionEvents();
-    this.rulesEngine.processCollisions(
+    const { maxImpact, destroyedCount } = this.rulesEngine.processCollisions(
       events,
       this.level.blocks,
       this.level.pigs,
       this.scoreManager
     );
 
+    // Screen shake and impact flash on significant impacts
+    if (maxImpact > SCREEN_SHAKE.IMPACT_THRESHOLD) {
+      const intensity = maxImpact > 10 ? SCREEN_SHAKE.LARGE_INTENSITY : SCREEN_SHAKE.SMALL_INTENSITY;
+      this.camera.shake(intensity);
+      playImpact();
+      // Spawn impact flash at collision points
+      for (const event of events) {
+        if (event.impactSpeed > SCREEN_SHAKE.IMPACT_THRESHOLD) {
+          const pos = (event.bodyA as any).position;
+          if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+            this.impactFlashes.push({ x: pos.x, y: pos.y, time: 0, maxTime: 0.12 });
+          }
+        }
+      }
+    }
+
+    // Slow-mo on big hits
+    if (destroyedCount >= 2 || maxImpact > 12) {
+      this.slowMoTime = TIMING.SLOW_MO_DURATION;
+    }
+
+    // Track combos and spawn floating text for destructions
+    if (destroyedCount > 0) {
+      if (this.gameTime - this.lastDestructionTime < TIMING.COMBO_WINDOW) {
+        this.comboCount += destroyedCount;
+      } else {
+        this.comboCount = destroyedCount;
+      }
+      this.lastDestructionTime = this.gameTime;
+    }
+
     // Remove destroyed blocks
     for (const block of this.level.blocks) {
       if (block.isDestroyed) {
         this.spawnParticles(block.body.position.x, block.body.position.y, block.material);
         this.physics.removeBody(block.body);
+        playBlockBreak();
       }
     }
     this.level.blocks = this.level.blocks.filter((b) => !b.isDestroyed);
@@ -130,10 +202,24 @@ export class LevelScene implements Scene {
     for (const pig of this.level.pigs) {
       if (pig.isDestroyed) {
         this.spawnParticles(pig.body.position.x, pig.body.position.y, 'pig');
+        this.spawnFloatingText(pig.body.position.x, pig.body.position.y, `+${SCORE.PIG_DEFEAT}`, '#ffdd00');
         this.physics.removeBody(pig.body);
+        playPigDefeat();
       }
     }
     this.level.pigs = this.level.pigs.filter((p) => !p.isDestroyed);
+
+    // Clean up destroyed launched birds
+    this.launchedBirds = this.launchedBirds.filter((b) => !b.isDestroyed);
+
+    // Spawn combo text and SFX
+    if (destroyedCount > 0 && this.comboCount >= 3) {
+      playCombo();
+      const lastDestroyed = events.length > 0 ? events[events.length - 1] : null;
+      const cx = lastDestroyed ? (lastDestroyed.bodyA as any).position?.x ?? GAME_WIDTH / 2 : GAME_WIDTH / 2;
+      const cy = lastDestroyed ? (lastDestroyed.bodyA as any).position?.y ?? GAME_HEIGHT / 2 : GAME_HEIGHT / 2;
+      this.spawnFloatingText(cx, cy - 30, `COMBO x${this.comboCount}!`, '#ff6600');
+    }
 
     // Set pigs worried when bird is flying
     const isFlying = this.turnManager.state === TurnState.FLYING;
@@ -148,24 +234,33 @@ export class LevelScene implements Scene {
         this.camera.followBird(birdX);
       }
     }
-    this.camera.update();
+    this.camera.update(dt);
+
+    // Record flight trail
+    if (this.turnManager.state === TurnState.FLYING && this.currentBird) {
+      const bp = this.currentBird.body.position;
+      if (Number.isFinite(bp.x) && Number.isFinite(bp.y)) {
+        if (Math.round(this.flyingTime * 60) % 3 === 0) {
+          this.flightTrail.push({ x: bp.x, y: bp.y });
+        }
+      }
+    }
 
     // Turn state management
     const allDefeated = this.rulesEngine.allPigsDefeated(this.level.pigs);
 
     if (this.turnManager.state === TurnState.FLYING && this.currentBird) {
-      // Check if bird has gone off screen or has slowed down
       const bird = this.currentBird;
-      this.flyingTime += dt;
+      this.flyingTime += effectiveDt;
 
-      const outOfBounds = bird.body.position.y > GAME_HEIGHT + 100 ||
-        bird.body.position.x > GAME_WIDTH * 3 ||
-        bird.body.position.x < -200;
+      const pos = bird.body.position;
+      const outOfBounds = !Number.isFinite(pos.x) || !Number.isFinite(pos.y) ||
+        pos.y > GAME_HEIGHT + BIRD_BOUNDS.MAX_Y_OFFSET ||
+        pos.x > GAME_WIDTH * BIRD_BOUNDS.MAX_X_FACTOR ||
+        pos.x < BIRD_BOUNDS.MIN_X;
 
-      // Speed-based settling: after a grace period for collisions, if bird is slow, settle
-      const birdStopped = this.flyingTime > 1.5 && bird.body.speed < 1.5;
-      // Max flying time as safety net (e.g. bird stuck bouncing)
-      const maxFlyingTime = this.flyingTime > 8.0;
+      const birdStopped = this.flyingTime > TIMING.BIRD_SETTLE_GRACE && bird.body.speed < TIMING.BIRD_SETTLE_SPEED;
+      const maxFlyingTime = this.flyingTime > TIMING.MAX_FLYING_TIME;
 
       if (outOfBounds || birdStopped || maxFlyingTime) {
         this.turnManager.setState(TurnState.SETTLING);
@@ -178,7 +273,7 @@ export class LevelScene implements Scene {
       !this.level.birdQueue.isEmpty()
     );
 
-    // Late win check: pigs may die from ongoing physics after turn transitioned
+    // Late win check
     if (allDefeated &&
       (this.turnManager.state === TurnState.AIMING ||
        this.turnManager.state === TurnState.NEXT_BIRD)) {
@@ -187,10 +282,9 @@ export class LevelScene implements Scene {
 
     // Handle turn transitions
     if (this.turnManager.state === TurnState.NEXT_BIRD) {
-      this.nextBirdDelay += dt;
-      if (this.nextBirdDelay >= 0.5) {
+      this.nextBirdDelay += effectiveDt;
+      if (this.nextBirdDelay >= TIMING.NEXT_BIRD_DELAY) {
         this.nextBirdDelay = 0;
-        // Remove old bird from physics
         if (this.currentBird) {
           this.physics.removeBody(this.currentBird.body);
         }
@@ -208,29 +302,69 @@ export class LevelScene implements Scene {
         this.finalStars,
         this.levelData.id
       );
+      playLevelWon();
     }
 
     if (this.turnManager.state === TurnState.LEVEL_LOST && !this.gameOverScreen) {
       this.gameOverScreen = new GameOverScreen();
+      this.camera.shake(SCREEN_SHAKE.SMALL_INTENSITY, 0.3);
+      playLevelLost();
     }
 
     // Update particles
     this.particles = this.particles.filter((p) => {
-      p.life -= dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vy += 400 * dt;
+      p.life -= effectiveDt;
+      p.x += p.vx * effectiveDt;
+      p.y += p.vy * effectiveDt;
+      p.vy += 400 * effectiveDt;
       return p.life > 0;
     });
 
     // Update explosion effects
     this.explosionEffects = this.explosionEffects.filter((e) => {
-      e.time += dt;
+      e.time += effectiveDt;
       return e.time < e.duration;
     });
+
+    // Update floating texts
+    this.floatingTexts = this.floatingTexts.filter((ft) => {
+      ft.life -= effectiveDt;
+      ft.y -= 60 * effectiveDt;
+      return ft.life > 0;
+    });
+
+    // Update impact flashes
+    this.impactFlashes = this.impactFlashes.filter((f) => {
+      f.time += effectiveDt;
+      return f.time < f.maxTime;
+    });
+
+    // Update title card
+    if (this.showTitleCard) {
+      this.titleCardTime += effectiveDt;
+      if (this.titleCardTime > 2) {
+        this.showTitleCard = false;
+      }
+    }
+
+    // Update victory screen animation
+    if (this.victoryScreen) {
+      this.victoryScreen.update(effectiveDt);
+    }
+
+    // Fade tutorial
+    if (this.showTutorial && this.gameTime > 3) {
+      this.tutorialAlpha -= effectiveDt * 2;
+      if (this.tutorialAlpha <= 0) {
+        this.showTutorial = false;
+        this.tutorialAlpha = 0;
+      }
+    }
   }
 
   render(ctx: CanvasRenderingContext2D): void {
+    const shakeY = this.camera.shakeOffsetY;
+
     // Background sky gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
     gradient.addColorStop(0, '#4a90d9');
@@ -241,6 +375,11 @@ export class LevelScene implements Scene {
 
     // Clouds
     this.renderClouds(ctx);
+
+    ctx.save();
+    if (shakeY !== 0) {
+      ctx.translate(0, shakeY);
+    }
 
     const cam = { x: this.camera.x, y: 0 };
 
@@ -281,6 +420,20 @@ export class LevelScene implements Scene {
       this.currentBird.render(ctx, cam);
     }
 
+    // Flight trail
+    if (this.flightTrail.length > 0) {
+      const trailLen = this.flightTrail.length;
+      for (let i = 0; i < trailLen; i++) {
+        const alpha = 0.15 + 0.45 * (i / trailLen);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(this.flightTrail[i].x - this.camera.x, this.flightTrail[i].y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
     // Trajectory preview
     if (this.isDragging && this.currentBird) {
       const vel = this.level.slingshot.getVelocityPreview();
@@ -294,11 +447,24 @@ export class LevelScene implements Scene {
       );
     }
 
+    // Power gauge during drag
+    if (this.isDragging && this.currentBird) {
+      this.renderPowerGauge(ctx);
+    }
+
     // Particles
     for (const p of this.particles) {
       ctx.globalAlpha = p.life / p.maxLife;
       ctx.fillStyle = p.color;
-      ctx.fillRect(p.x - p.size / 2 - this.camera.x, p.y - p.size / 2, p.size, p.size);
+      if (p.shape === 'shard') {
+        ctx.save();
+        ctx.translate(p.x - this.camera.x, p.y);
+        ctx.rotate(p.vx * 0.01);
+        ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+        ctx.restore();
+      } else {
+        ctx.fillRect(p.x - p.size / 2 - this.camera.x, p.y - p.size / 2, p.size, p.size);
+      }
     }
     ctx.globalAlpha = 1;
 
@@ -319,8 +485,49 @@ export class LevelScene implements Scene {
     }
     ctx.globalAlpha = 1;
 
-    // HUD
+    // Impact flashes
+    for (const f of this.impactFlashes) {
+      const alpha = 1 - f.time / f.maxTime;
+      const radius = 15 + (f.time / f.maxTime) * 20;
+      ctx.globalAlpha = alpha * 0.7;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(f.x - this.camera.x, f.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Floating texts
+    for (const ft of this.floatingTexts) {
+      const alpha = ft.life / ft.maxLife;
+      ctx.globalAlpha = alpha;
+      ctx.font = 'bold 20px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 3;
+      ctx.strokeText(ft.text, ft.x - this.camera.x, ft.y);
+      ctx.fillStyle = ft.color;
+      ctx.fillText(ft.text, ft.x - this.camera.x, ft.y);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
+
+    // HUD (not affected by shake)
     this.hud.render(ctx, this.scoreManager.score, this.level.birdQueue);
+
+    // Combo indicator in HUD area
+    if (this.comboCount >= 3 && this.gameTime - this.lastDestructionTime < TIMING.COMBO_WINDOW) {
+      ctx.font = 'bold 18px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ff6600';
+      ctx.fillText(`COMBO x${this.comboCount}`, GAME_WIDTH / 2, 35);
+    }
+
+    // Pause button
+    this.renderPauseButton(ctx);
 
     // Overlays
     if (this.victoryScreen) {
@@ -329,6 +536,130 @@ export class LevelScene implements Scene {
     if (this.gameOverScreen) {
       this.gameOverScreen.render(ctx);
     }
+
+    // Title card
+    if (this.showTitleCard) {
+      const alpha = this.titleCardTime < 1.5 ? 1 : Math.max(0, 1 - (this.titleCardTime - 1.5) / 0.5);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(GAME_WIDTH / 2 - 200, GAME_HEIGHT / 2 - 40, 400, 60);
+      ctx.font = 'bold 28px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(this.levelData.name, GAME_WIDTH / 2, GAME_HEIGHT / 2);
+      ctx.font = '16px Arial, sans-serif';
+      ctx.fillStyle = '#ccc';
+      ctx.fillText(`Level ${this.levelData.id}`, GAME_WIDTH / 2, GAME_HEIGHT / 2 - 22);
+      ctx.globalAlpha = 1;
+    }
+
+    // Tutorial overlay
+    if (this.showTutorial) {
+      this.renderTutorial(ctx);
+    }
+
+    // Pause overlay
+    if (this.isPaused) {
+      this.renderPauseOverlay(ctx);
+    }
+  }
+
+  private renderPowerGauge(ctx: CanvasRenderingContext2D): void {
+    const dragPos = this.level.slingshot.getDragPosition();
+    const dx = this.level.slingshot.anchorX - dragPos.x;
+    const dy = this.level.slingshot.anchorY - dragPos.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const power = Math.min(dist / SLINGSHOT.maxDrag, 1);
+
+    const barX = 20;
+    const barY = GAME_HEIGHT - 40;
+    const barW = 120;
+    const barH = 12;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+
+    // Gradient from green to yellow to red
+    const grd = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    grd.addColorStop(0, '#4caf50');
+    grd.addColorStop(0.5, '#ffeb3b');
+    grd.addColorStop(1, '#f44336');
+    ctx.fillStyle = grd;
+    ctx.fillRect(barX, barY, barW * power, barH);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+
+    ctx.font = '10px Arial, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('POWER', barX, barY - 2);
+  }
+
+  private renderPauseButton(ctx: CanvasRenderingContext2D): void {
+    if (this.victoryScreen || this.gameOverScreen) return;
+    const x = GAME_WIDTH / 2 - 15;
+    const y = 12;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.beginPath();
+    ctx.arc(x + 15, y + 15, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x + 9, y + 7, 5, 16);
+    ctx.fillRect(x + 17, y + 7, 5, 16);
+  }
+
+  private renderTutorial(ctx: CanvasRenderingContext2D): void {
+    ctx.globalAlpha = this.tutorialAlpha;
+
+    // Arrow pointing to slingshot
+    const sx = this.level.slingshot.anchorX - this.camera.x;
+    const sy = this.level.slingshot.anchorY - 80;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.moveTo(sx - 100, sy - 60);
+    ctx.lineTo(sx + 160, sy - 60);
+    ctx.lineTo(sx + 160, sy - 20);
+    ctx.lineTo(sx - 100, sy - 20);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('Drag bird to aim, release to launch!', sx + 30, sy - 34);
+
+    // Pulsing arrow
+    const pulse = Math.sin(this.gameTime * 4) * 3;
+    ctx.fillStyle = '#ffdd00';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - 15 + pulse);
+    ctx.lineTo(sx - 8, sy - 25 + pulse);
+    ctx.lineTo(sx + 8, sy - 25 + pulse);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+  }
+
+  private renderPauseOverlay(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+    ctx.font = 'bold 48px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('PAUSED', GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30);
+
+    ctx.font = '20px Arial, sans-serif';
+    ctx.fillStyle = '#ccc';
+    ctx.fillText('Press ESC or tap to resume', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 20);
   }
 
   private renderClouds(ctx: CanvasRenderingContext2D): void {
@@ -358,30 +689,58 @@ export class LevelScene implements Scene {
       pig: ['#6abf4b', '#8fd97a', '#50a535'],
     };
     const particleColors = colors[type] || ['#888'];
+    const shape: ParticleShape = type === 'ICE' ? 'shard' : 'square';
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 20; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 100 + Math.random() * 200;
+      const speed = 80 + Math.random() * 250;
       this.particles.push({
-        x,
-        y,
+        x: x + (Math.random() - 0.5) * 20,
+        y: y + (Math.random() - 0.5) * 20,
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 100,
-        size: 3 + Math.random() * 5,
+        vy: Math.sin(angle) * speed - 150,
+        size: 4 + Math.random() * 8,
         color: particleColors[Math.floor(Math.random() * particleColors.length)],
-        life: 0.5 + Math.random() * 0.5,
-        maxLife: 1,
+        life: TIMING.PARTICLE_LIFE_MIN + Math.random() * TIMING.PARTICLE_LIFE_RANGE,
+        maxLife: TIMING.PARTICLE_LIFE_MIN + TIMING.PARTICLE_LIFE_RANGE,
+        shape,
       });
     }
   }
 
+  private spawnFloatingText(x: number, y: number, text: string, color: string): void {
+    this.floatingTexts.push({
+      x, y, text, color,
+      life: TIMING.FLOATING_TEXT_LIFE,
+      maxLife: TIMING.FLOATING_TEXT_LIFE,
+    });
+  }
+
   onPointerDown(x: number, y: number): void {
+    // Resume from pause on tap
+    if (this.isPaused) {
+      this.isPaused = false;
+      return;
+    }
+
+    // Pause button hit test
+    if (!this.victoryScreen && !this.gameOverScreen) {
+      const pbX = GAME_WIDTH / 2;
+      const pbY = 27;
+      if (Math.sqrt((x - pbX) ** 2 + (y - pbY) ** 2) < 16) {
+        this.isPaused = true;
+        return;
+      }
+    }
+
     // Check victory/gameover buttons first
     if (this.victoryScreen) {
       const action = this.victoryScreen.handleClick(x, y);
       if (action === 'next') {
         import('../ui/LevelSelectScene').then(({ LevelSelectScene }) => {
           this.game.sceneManager.switchTo(new LevelSelectScene());
+        }).catch(() => {
+          this.game.sceneManager.switchTo(new LevelScene(this.levelData));
         });
       } else if (action === 'replay') {
         this.game.sceneManager.switchTo(new LevelScene(this.levelData));
@@ -397,18 +756,34 @@ export class LevelScene implements Scene {
       return;
     }
 
-    // Bomb bird tap to explode during flight
-    if (this.turnManager.state === TurnState.FLYING && this.currentBird instanceof BombBird) {
-      if (!this.currentBird.hasExploded) {
+    // Bird ability activation during flight
+    if (this.turnManager.state === TurnState.FLYING) {
+      if (this.currentBird instanceof BombBird && !this.currentBird.hasExploded) {
         this.currentBird.explode(this.physics);
-        this.explosionEffects.push({
-          x: this.currentBird.body.position.x,
-          y: this.currentBird.body.position.y,
-          maxRadius: 180,
-          time: 0,
-          duration: 0.4,
-        });
+        const bpos = this.currentBird.body.position;
+        if (Number.isFinite(bpos.x) && Number.isFinite(bpos.y)) {
+          this.explosionEffects.push({
+            x: bpos.x,
+            y: bpos.y,
+            maxRadius: 180,
+            time: 0,
+            duration: TIMING.EXPLOSION_DURATION,
+          });
+        }
+        this.camera.shake(SCREEN_SHAKE.BOMB_INTENSITY, 0.3);
         this.turnManager.setState(TurnState.SETTLING);
+        playExplosion();
+        return;
+      }
+      if (this.currentBird instanceof YellowBird && !this.currentBird.hasBoosted) {
+        this.currentBird.activate();
+        this.spawnFloatingText(
+          this.currentBird.body.position.x,
+          this.currentBird.body.position.y - 30,
+          'BOOST!',
+          '#ffd700'
+        );
+        playBoost();
         return;
       }
     }
@@ -420,6 +795,7 @@ export class LevelScene implements Scene {
       const dist = Math.sqrt((x - birdX) ** 2 + (y - birdY) ** 2);
       if (dist < SLINGSHOT.maxDrag) {
         this.isDragging = true;
+        this.showTutorial = false;
         this.level.slingshot.startDrag();
       }
     }
@@ -440,10 +816,26 @@ export class LevelScene implements Scene {
       this.currentBird.launch(velocity.x, velocity.y);
       this.launchedBirds.push(this.currentBird);
       this.flyingTime = 0;
+      this.flightTrail = [];
       this.turnManager.setState(TurnState.FLYING);
+      this.camera.shake(SCREEN_SHAKE.SMALL_INTENSITY * 0.5, 0.1);
+      playLaunch();
+    }
+  }
+
+  onKeyDown(key: string): void {
+    if (key === 'Escape' || key === 'p' || key === 'P') {
+      if (!this.victoryScreen && !this.gameOverScreen) {
+        this.isPaused = !this.isPaused;
+      }
+    }
+    if (key === 'r' || key === 'R') {
+      this.game.sceneManager.switchTo(new LevelScene(this.levelData));
     }
   }
 }
+
+type ParticleShape = 'square' | 'shard';
 
 interface Particle {
   x: number;
@@ -454,6 +846,7 @@ interface Particle {
   color: string;
   life: number;
   maxLife: number;
+  shape: ParticleShape;
 }
 
 interface ExplosionEffect {
@@ -462,4 +855,20 @@ interface ExplosionEffect {
   maxRadius: number;
   time: number;
   duration: number;
+}
+
+interface ImpactFlash {
+  x: number;
+  y: number;
+  time: number;
+  maxTime: number;
+}
+
+interface FloatingText {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  life: number;
+  maxLife: number;
 }

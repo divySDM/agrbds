@@ -1,12 +1,22 @@
 import { GAME_WIDTH, GAME_HEIGHT } from '../game/types';
+import { freaky } from './freaky';
+
+const F_LEVEL_COMPLETE = freaky('LEVEL COMPLETE!');
+const F_REPLAY = freaky('REPLAY');
+const F_NEXT = freaky('NEXT');
 
 export class VictoryScreen {
   private score: number;
   private stars: number;
+  private time: number = 0;
 
   constructor(score: number, stars: number, _levelId: number) {
     this.score = score;
     this.stars = stars;
+  }
+
+  update(dt: number): void {
+    this.time += dt;
   }
 
   render(ctx: CanvasRenderingContext2D): void {
@@ -35,20 +45,33 @@ export class VictoryScreen {
     // Title
     ctx.fillStyle = '#ffd700';
     ctx.font = 'bold 42px Arial, sans-serif';
-    ctx.fillText('LEVEL COMPLETE!', GAME_WIDTH / 2, panelY + 50);
+    ctx.fillText(F_LEVEL_COMPLETE, GAME_WIDTH / 2, panelY + 50);
 
-    // Stars
-    ctx.font = '60px Arial, sans-serif';
+    // Stars (animated twinkle)
     for (let i = 0; i < 3; i++) {
       const starX = GAME_WIDTH / 2 - 70 + i * 70;
-      ctx.fillStyle = i < this.stars ? '#ffd700' : '#555';
+      const delay = i * 0.3;
+      const starTime = Math.max(0, this.time - delay);
+
+      if (i < this.stars && starTime > 0) {
+        const scale = Math.min(starTime / 0.2, 1);
+        const twinkle = 0.85 + 0.15 * Math.sin(starTime * 6);
+        ctx.globalAlpha = twinkle;
+        ctx.font = `${Math.round(60 * scale)}px Arial, sans-serif`;
+        ctx.fillStyle = '#ffd700';
+      } else {
+        ctx.globalAlpha = 1;
+        ctx.font = '60px Arial, sans-serif';
+        ctx.fillStyle = '#555';
+      }
       ctx.fillText('\u2605', starX, panelY + 130);
     }
+    ctx.globalAlpha = 1;
 
     // Score
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 28px Arial, sans-serif';
-    ctx.fillText(`Score: ${this.score}`, GAME_WIDTH / 2, panelY + 200);
+    ctx.fillText(freaky(`Score: ${this.score}`), GAME_WIDTH / 2, panelY + 200);
 
     // Buttons
     const btnY = panelY + 280;
@@ -59,14 +82,14 @@ export class VictoryScreen {
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 22px Arial, sans-serif';
-    ctx.fillText('REPLAY', GAME_WIDTH / 2 - 105, btnY);
+    ctx.fillText(F_REPLAY, GAME_WIDTH / 2 - 105, btnY);
 
     // Next button
     ctx.fillStyle = '#4CAF50';
     this.roundRect(ctx, GAME_WIDTH / 2 + 30, btnY - 25, 150, 50, 10);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.fillText('NEXT', GAME_WIDTH / 2 + 105, btnY);
+    ctx.fillText(F_NEXT, GAME_WIDTH / 2 + 105, btnY);
 
     ctx.restore();
   }

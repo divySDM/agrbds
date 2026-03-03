@@ -11,7 +11,9 @@ export class TrajectoryPreview {
   ): void {
     const dotCount = 30;
     const timeStep = 0.05;
-    const gravity = GRAVITY.y * 1000; // Match Matter.js gravity scaling
+    // Matter.js applies GRAVITY.y per step (60 steps/sec).
+    // In real-time: g_real = GRAVITY.y * fps^2 = 1.2 * 3600 = 4320 units/s²
+    const gravity = GRAVITY.y * 3600;
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
 

@@ -10,4 +10,5 @@ export interface Scene {
   onPointerDown?(x: number, y: number): void;
   onPointerMove?(x: number, y: number): void;
   onPointerUp?(x: number, y: number): void;
+  onKeyDown?(key: string): void;
 }

@@ -1,5 +1,6 @@
 export enum BirdType {
   RED = 'RED',
+  YELLOW = 'YELLOW',
   BOMB = 'BOMB',
 }
 
@@ -11,6 +12,7 @@ export enum MaterialType {
 
 export enum DamageState {
   INTACT = 'INTACT',
+  LIGHT_DAMAGE = 'LIGHT_DAMAGE',
   CRACKED = 'CRACKED',
   DESTROYED = 'DESTROYED',
 }

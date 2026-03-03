@@ -1,5 +1,6 @@
 import { GAME_WIDTH, BirdType } from '../game/types';
 import type { BirdQueue } from '../entities/BirdQueue';
+import { freaky } from './freaky';
 
 export class HUD {
   render(ctx: CanvasRenderingContext2D, score: number, birdQueue: BirdQueue): void {
@@ -15,7 +16,7 @@ export class HUD {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 24px Arial, sans-serif';
-    ctx.fillText(`Score: ${score}`, 20, 30);
+    ctx.fillText(freaky(`Score: ${score}`), 20, 30);
 
     // Bird queue indicator
     const types = birdQueue.types;
@@ -30,7 +31,7 @@ export class HUD {
     ctx.textAlign = 'center';
     for (let i = 0; i < types.length; i++) {
       const x = queueX - queueW + 20 + i * 30;
-      const color = types[i] === BirdType.RED ? '#e03030' : '#2a2a2a';
+      const color = types[i] === BirdType.RED ? '#e03030' : types[i] === BirdType.YELLOW ? '#ffd700' : '#2a2a2a';
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(x, queueY, 10, 0, Math.PI * 2);
@@ -38,6 +39,15 @@ export class HUD {
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 1;
       ctx.stroke();
+    }
+
+    // "LAST BIRD!" warning
+    if (birdQueue.remaining === 0 && birdQueue.total > 0) {
+      ctx.font = 'bold 14px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ff4444';
+      ctx.fillText('LAST BIRD!', queueX - queueW / 2, 58);
     }
 
     ctx.restore();

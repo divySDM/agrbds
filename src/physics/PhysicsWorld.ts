@@ -10,6 +10,9 @@ export class PhysicsWorld {
   constructor() {
     this.engine = Matter.Engine.create({
       gravity: GRAVITY,
+      // Higher solver iterations prevent fast bodies tunneling through thin objects
+      positionIterations: 10, // default 6
+      velocityIterations: 8,  // default 4
     });
     this.world = this.engine.world;
     this.collisionHandler = new CollisionHandler(this.engine);

@@ -2,6 +2,10 @@ import type { Scene } from '../game/Scene';
 import type { Game } from '../game/Game';
 import { SceneType, GAME_WIDTH, GAME_HEIGHT } from '../game/types';
 import { LevelSelectScene } from './LevelSelectScene';
+import { freaky } from './freaky';
+
+const F_TITLE = freaky('ANGRY BIRDS N');
+const F_PLAY = freaky('PLAY');
 
 export class MenuScene implements Scene {
   readonly sceneType = SceneType.MENU;
@@ -53,22 +57,17 @@ export class MenuScene implements Scene {
     // Title shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.font = 'bold 80px Arial, sans-serif';
-    ctx.fillText('ANGRY BIRDS', GAME_WIDTH / 2 + 3, 240 + bounce + 3);
+    ctx.fillText(F_TITLE, GAME_WIDTH / 2 + 3, 240 + bounce + 3);
 
     // Title
     ctx.fillStyle = '#ff3030';
     ctx.font = 'bold 80px Arial, sans-serif';
-    ctx.fillText('ANGRY BIRDS', GAME_WIDTH / 2, 240 + bounce);
+    ctx.fillText(F_TITLE, GAME_WIDTH / 2, 240 + bounce);
 
     // Title outline
     ctx.strokeStyle = '#8b0000';
     ctx.lineWidth = 3;
-    ctx.strokeText('ANGRY BIRDS', GAME_WIDTH / 2, 240 + bounce);
-
-    // Subtitle
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 24px Arial, sans-serif';
-    ctx.fillText('Browser Edition', GAME_WIDTH / 2, 300 + bounce);
+    ctx.strokeText(F_TITLE, GAME_WIDTH / 2, 240 + bounce);
 
     // Play button
     const btnX = GAME_WIDTH / 2;
@@ -95,7 +94,7 @@ export class MenuScene implements Scene {
     // Button text
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 36px Arial, sans-serif';
-    ctx.fillText('PLAY', btnX, btnY + 2);
+    ctx.fillText(F_PLAY, btnX, btnY + 2);
 
     // Decorative birds
     this.drawMiniBird(ctx, 200, 380, '#e03030');

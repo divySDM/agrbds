@@ -6,9 +6,9 @@ export class Game {
   readonly ctx: CanvasRenderingContext2D;
   readonly sceneManager: SceneManager;
 
-  // Level progress (in-memory, no persistence)
   levelStars: Map<number, number> = new Map();
   highestUnlocked: number = 1;
+  private static readonly STORAGE_KEY = 'angrybirds_progress';
 
   private lastTime: number = 0;
   private accumulator: number = 0;
@@ -22,6 +22,7 @@ export class Game {
     this.ctx = ctx;
 
     this.sceneManager = new SceneManager(this);
+    this.loadProgress();
     this.setupCanvas();
     this.setupInput();
   }
@@ -81,6 +82,11 @@ export class Game {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     // Prevent touch scrolling
     this.canvas.style.touchAction = 'none';
+
+    // Keyboard input
+    window.addEventListener('keydown', (e) => {
+      this.sceneManager.onKeyDown(e.key);
+    });
   }
 
   start(): void {
@@ -117,6 +123,39 @@ export class Game {
     }
     if (levelNum + 1 > this.highestUnlocked) {
       this.highestUnlocked = levelNum + 1;
+    }
+    this.saveProgress();
+  }
+
+  private saveProgress(): void {
+    try {
+      const data = {
+        highestUnlocked: this.highestUnlocked,
+        levelStars: Object.fromEntries(this.levelStars),
+      };
+      localStorage.setItem(Game.STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // localStorage unavailable
+    }
+  }
+
+  private loadProgress(): void {
+    try {
+      const raw = localStorage.getItem(Game.STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (typeof data.highestUnlocked === 'number') {
+        this.highestUnlocked = data.highestUnlocked;
+      }
+      if (data.levelStars && typeof data.levelStars === 'object') {
+        for (const [k, v] of Object.entries(data.levelStars)) {
+          if (typeof v === 'number') {
+            this.levelStars.set(Number(k), v);
+          }
+        }
+      }
+    } catch {
+      // Corrupted or unavailable
     }
   }
 }

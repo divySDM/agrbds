@@ -1,4 +1,9 @@
 import { GAME_WIDTH, GAME_HEIGHT } from '../game/types';
+import { freaky } from './freaky';
+
+const F_GAME_OVER = freaky('GAME OVER');
+const F_PIGS_SURVIVED = freaky('Pigs survived!');
+const F_TRY_AGAIN = freaky('TRY AGAIN');
 
 export class GameOverScreen {
   render(ctx: CanvasRenderingContext2D): void {
@@ -27,12 +32,12 @@ export class GameOverScreen {
     // Title
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 42px Arial, sans-serif';
-    ctx.fillText('GAME OVER', GAME_WIDTH / 2, panelY + 70);
+    ctx.fillText(F_GAME_OVER, GAME_WIDTH / 2, panelY + 70);
 
     // Subtitle
     ctx.font = '22px Arial, sans-serif';
     ctx.fillStyle = '#ddd';
-    ctx.fillText('Pigs survived!', GAME_WIDTH / 2, panelY + 120);
+    ctx.fillText(F_PIGS_SURVIVED, GAME_WIDTH / 2, panelY + 120);
 
     // Retry button
     const btnY = panelY + 190;
@@ -41,7 +46,7 @@ export class GameOverScreen {
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 24px Arial, sans-serif';
-    ctx.fillText('TRY AGAIN', GAME_WIDTH / 2, btnY);
+    ctx.fillText(F_TRY_AGAIN, GAME_WIDTH / 2, btnY);
 
     ctx.restore();
   }
