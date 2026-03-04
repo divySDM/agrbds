@@ -48,9 +48,9 @@ test.describe('Navigation: Menu and Level Select', () => {
     await clickPlay(page);
     const state1 = await getGameState(page);
     expect(state1.scene).toBe('LEVEL_SELECT');
-    // Should start on page 0 with 2 total pages
+    // Should start on page 0 with 3 total pages
     expect(state1.levelSelectPage).toBe(0);
-    expect(state1.levelSelectTotalPages).toBe(2);
+    expect(state1.levelSelectTotalPages).toBe(3);
 
     // Navigate to page 2
     await clickNextPage(page);

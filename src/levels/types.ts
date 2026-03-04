@@ -7,6 +7,7 @@ export interface BlockDef {
   height: number;
   material: MaterialType;
   special?: SpecialBlockType;
+  direction?: 'left' | 'right';
 }
 
 export interface PigDef {

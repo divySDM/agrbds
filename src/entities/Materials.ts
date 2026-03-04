@@ -34,4 +34,20 @@ export const MATERIALS: Record<MaterialType, MaterialDef> = {
     restitution: 0.1,
     health: 200,
   },
+  [MaterialType.RUBBER]: {
+    color: '#e84393',
+    crackedColor: '#c0366e',
+    density: 0.006,
+    friction: 0.2,
+    restitution: 0.9,
+    health: 300,
+  },
+  [MaterialType.SAND]: {
+    color: '#dbc49a',
+    crackedColor: '#c4a87a',
+    density: 0.010,
+    friction: 0.8,
+    restitution: 0.05,
+    health: 25,
+  },
 };

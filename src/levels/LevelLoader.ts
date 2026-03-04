@@ -21,6 +21,9 @@ export function loadLevel(data: LevelData, physics: PhysicsWorld): LoadedLevel {
   const blocks: Block[] = [];
   for (const def of data.blocks) {
     const block = new Block(def.x, def.y, def.width, def.height, def.material, def.special);
+    if (def.direction) {
+      block.direction = def.direction;
+    }
     physics.addBody(block.body);
     if (block.sensorBody) {
       physics.addBody(block.sensorBody);

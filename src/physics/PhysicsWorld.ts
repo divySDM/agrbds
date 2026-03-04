@@ -38,6 +38,10 @@ export class PhysicsWorld {
     return this.collisionHandler.drainSensorEvents();
   }
 
+  getActiveSensorContacts(): SensorCollisionEvent[] {
+    return this.collisionHandler.getActiveSensorContacts();
+  }
+
   setGravity(y: number): void {
     this.engine.gravity.y = y;
   }

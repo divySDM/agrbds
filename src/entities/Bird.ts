@@ -1,6 +1,6 @@
 import Matter from 'matter-js';
 import { BirdType, COLLISION_CATEGORIES, type GameEntity, type Vec2 } from '../game/types';
-import { BIRD_PROPERTIES } from '../physics/constants';
+import { BIRD_PROPERTIES, BIRD_STATS } from '../physics/constants';
 
 export class Bird implements GameEntity {
   readonly id: string;
@@ -12,10 +12,11 @@ export class Bird implements GameEntity {
   constructor(x: number, y: number, type: BirdType = BirdType.RED) {
     this.id = `bird_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     this.type = type;
-    this.body = Matter.Bodies.circle(x, y, BIRD_PROPERTIES.radius, {
-      density: BIRD_PROPERTIES.density,
+    const stats = BIRD_STATS[type] ?? BIRD_STATS[BirdType.RED];
+    this.body = Matter.Bodies.circle(x, y, stats.radius, {
+      density: stats.density,
       friction: BIRD_PROPERTIES.friction,
-      restitution: BIRD_PROPERTIES.restitution,
+      restitution: stats.restitution,
       collisionFilter: {
         category: COLLISION_CATEGORIES.BIRD,
       },
@@ -45,7 +46,8 @@ export class Bird implements GameEntity {
   render(ctx: CanvasRenderingContext2D, camera: { x: number; y: number }): void {
     const x = this.body.position.x - camera.x;
     const y = this.body.position.y - camera.y;
-    const r = BIRD_PROPERTIES.radius;
+    const stats = BIRD_STATS[this.type] ?? BIRD_STATS[BirdType.RED];
+    const r = stats.radius;
 
     // Rotate bird in direction of travel when launched
     const vel = this.body.velocity;
@@ -63,8 +65,14 @@ export class Bird implements GameEntity {
       this.renderRedBird(ctx, r);
     } else if (this.type === BirdType.YELLOW) {
       this.renderYellowBird(ctx, r);
-    } else {
+    } else if (this.type === BirdType.BOMB) {
       this.renderBombBird(ctx, r);
+    } else if (this.type === BirdType.BLUE) {
+      this.renderBlueBird(ctx, r);
+    } else if (this.type === BirdType.WHITE) {
+      this.renderWhiteBird(ctx, r);
+    } else if (this.type === BirdType.BIG) {
+      this.renderBigBird(ctx, r);
     }
 
     ctx.restore();
@@ -241,6 +249,198 @@ export class Bird implements GameEntity {
     ctx.fillStyle = '#ffcc00';
     ctx.beginPath();
     ctx.arc(2, -r - 14, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private renderBlueBird(ctx: CanvasRenderingContext2D, r: number): void {
+    // Small light-blue body
+    ctx.fillStyle = '#5bc0eb';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Lighter belly
+    ctx.fillStyle = '#a0e4ff';
+    ctx.beginPath();
+    ctx.arc(0, 3, r * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Wide eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.ellipse(-4, -3, 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(4, -3, 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(-3, -2, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(5, -2, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Three-feather crest splitting outward
+    ctx.fillStyle = '#3a9fd8';
+    ctx.beginPath();
+    ctx.moveTo(-4, -r);
+    ctx.lineTo(-7, -r - 8);
+    ctx.lineTo(-2, -r + 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(0, -r - 10);
+    ctx.lineTo(3, -r + 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(4, -r);
+    ctx.lineTo(7, -r - 8);
+    ctx.lineTo(2, -r + 1);
+    ctx.closePath();
+    ctx.fill();
+
+    // Beak
+    ctx.fillStyle = '#f5a623';
+    ctx.beginPath();
+    ctx.moveTo(3, 1);
+    ctx.lineTo(11, 2);
+    ctx.lineTo(3, 5);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private renderWhiteBird(ctx: CanvasRenderingContext2D, r: number): void {
+    // White oval body (tall proportions)
+    ctx.fillStyle = '#f0f0f0';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 0.85, r, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Rosy cheeks
+    ctx.fillStyle = 'rgba(255, 150, 150, 0.4)';
+    ctx.beginPath();
+    ctx.arc(-6, 4, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(6, 4, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.ellipse(-4, -4, 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(4, -4, 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(-3, -3, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(5, -3, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyebrows
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-9, -10);
+    ctx.lineTo(-2, -7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(9, -10);
+    ctx.lineTo(2, -7);
+    ctx.stroke();
+
+    // Dark tail feathers
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.moveTo(-5, r * 0.6);
+    ctx.lineTo(-10, r + 4);
+    ctx.lineTo(-2, r * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, r * 0.7);
+    ctx.lineTo(0, r + 6);
+    ctx.lineTo(4, r * 0.7);
+    ctx.closePath();
+    ctx.fill();
+
+    // Beak
+    ctx.fillStyle = '#f5a623';
+    ctx.beginPath();
+    ctx.moveTo(2, 1);
+    ctx.lineTo(12, 2);
+    ctx.lineTo(2, 5);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  private renderBigBird(ctx: CanvasRenderingContext2D, r: number): void {
+    // Dark red, very large circle
+    ctx.fillStyle = '#8b1a1a';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Darker belly
+    ctx.fillStyle = '#6a1010';
+    ctx.beginPath();
+    ctx.arc(0, 6, r * 0.65, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.ellipse(-8, -6, 7, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(8, -6, 7, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(-6, -5, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(10, -5, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Thick angry eyebrows (square jaw look)
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-16, -16);
+    ctx.lineTo(-4, -10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(16, -16);
+    ctx.lineTo(4, -10);
+    ctx.stroke();
+
+    // Beak
+    ctx.fillStyle = '#f5a623';
+    ctx.beginPath();
+    ctx.moveTo(4, 0);
+    ctx.lineTo(18, 3);
+    ctx.lineTo(4, 8);
+    ctx.closePath();
+    ctx.fill();
+
+    // Head crest
+    ctx.fillStyle = '#6b0e0e';
+    ctx.beginPath();
+    ctx.moveTo(-4, -r);
+    ctx.lineTo(0, -r - 12);
+    ctx.lineTo(4, -r);
+    ctx.closePath();
     ctx.fill();
   }
 

@@ -1,5 +1,6 @@
 import Matter from 'matter-js';
 import { COLLISION_CATEGORIES, DamageState, MaterialType, SpecialBlockType, type GameEntity, type Vec2 } from '../game/types';
+import { EXPLOSIVE_BARREL } from '../physics/constants';
 import { MATERIALS } from './Materials';
 
 export class Block implements GameEntity {
@@ -12,8 +13,10 @@ export class Block implements GameEntity {
   sensorBody?: Matter.Body;
   linkedTeleporter?: Block;
   activated: boolean = false;
+  direction?: 'left' | 'right';
+  fuseTimer: number = -1;
   private health: number;
-  private maxHealth: number;
+  readonly maxHealth: number;
   private _damageState: DamageState = DamageState.INTACT;
   isDestroyed: boolean = false;
 
@@ -29,9 +32,15 @@ export class Block implements GameEntity {
     if (specialType === SpecialBlockType.TNT) {
       this.health = 40;
       this.maxHealth = 40;
-    } else if (specialType === SpecialBlockType.GEL_PAD || specialType === SpecialBlockType.TELEPORTER) {
+    } else if (specialType === SpecialBlockType.GEL_PAD || specialType === SpecialBlockType.TELEPORTER || specialType === SpecialBlockType.CONVEYOR) {
       this.health = 9999;
       this.maxHealth = 9999;
+    } else if (specialType === SpecialBlockType.MAGNET) {
+      this.health = 150;
+      this.maxHealth = 150;
+    } else if (specialType === SpecialBlockType.EXPLOSIVE_BARREL) {
+      this.health = EXPLOSIVE_BARREL.health;
+      this.maxHealth = EXPLOSIVE_BARREL.health;
     } else {
       this.health = mat.health;
       this.maxHealth = mat.health;
@@ -48,8 +57,8 @@ export class Block implements GameEntity {
     });
     (this.body as any).gameEntity = this;
 
-    // Create sensor body for gel pad and teleporter (any-speed collision detection)
-    if (specialType === SpecialBlockType.GEL_PAD || specialType === SpecialBlockType.TELEPORTER) {
+    // Create sensor body for gel pad, teleporter, and conveyor (any-speed collision detection)
+    if (specialType === SpecialBlockType.GEL_PAD || specialType === SpecialBlockType.TELEPORTER || specialType === SpecialBlockType.CONVEYOR) {
       this.sensorBody = Matter.Bodies.rectangle(x, y, width + 10, height + 10, {
         isSensor: true,
         isStatic: true,
@@ -72,8 +81,17 @@ export class Block implements GameEntity {
 
   applyDamage(amount: number): void {
     if (this.isDestroyed) return;
+    // Explosive barrel becomes indestructible during fuse countdown
+    if (this.specialType === SpecialBlockType.EXPLOSIVE_BARREL && this.fuseTimer >= 0) return;
     this.health -= amount;
     if (this.health <= 0) {
+      // Explosive barrel: arm fuse instead of destroying
+      if (this.specialType === SpecialBlockType.EXPLOSIVE_BARREL && !this.activated) {
+        this.activated = true;
+        this.fuseTimer = EXPLOSIVE_BARREL.fuseTime;
+        this.health = 1; // Keep alive during fuse
+        return;
+      }
       this._damageState = DamageState.DESTROYED;
       this.isDestroyed = true;
     } else if (this.health < this.maxHealth * 0.5) {
@@ -168,6 +186,25 @@ export class Block implements GameEntity {
     } else if (this.material === MaterialType.ICE) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.fillRect(-this.width / 2 + 2, -this.height / 2 + 2, this.width * 0.4, this.height * 0.3);
+    } else if (this.material === MaterialType.RUBBER) {
+      // Bouncy chevron lines
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1.5;
+      for (let i = -this.height / 2 + 8; i < this.height / 2; i += 10) {
+        ctx.beginPath();
+        ctx.moveTo(-this.width / 2 + 2, i);
+        ctx.lineTo(0, i - 4);
+        ctx.lineTo(this.width / 2 - 2, i);
+        ctx.stroke();
+      }
+    } else if (this.material === MaterialType.SAND) {
+      // Stipple grain texture
+      ctx.fillStyle = 'rgba(139, 109, 60, 0.3)';
+      for (let i = 0; i < 12; i++) {
+        const sx = (Math.sin(i * 7.3) * 0.5 + 0.5) * this.width - this.width / 2;
+        const sy = (Math.cos(i * 4.1) * 0.5 + 0.5) * this.height - this.height / 2;
+        ctx.fillRect(sx, sy, 2, 2);
+      }
     }
 
     ctx.restore();
@@ -196,6 +233,15 @@ export class Block implements GameEntity {
         break;
       case SpecialBlockType.TELEPORTER:
         this.renderTeleporter(ctx, hw, hh);
+        break;
+      case SpecialBlockType.MAGNET:
+        this.renderMagnet(ctx, hw, hh);
+        break;
+      case SpecialBlockType.CONVEYOR:
+        this.renderConveyor(ctx, hw, hh);
+        break;
+      case SpecialBlockType.EXPLOSIVE_BARREL:
+        this.renderExplosiveBarrel(ctx, hw, hh);
         break;
     }
 
@@ -341,6 +387,117 @@ export class Block implements GameEntity {
     ctx.beginPath();
     ctx.ellipse(0, 0, hw, hh, 0, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  private renderMagnet(ctx: CanvasRenderingContext2D, hw: number, hh: number): void {
+    // Dark metallic gray body
+    ctx.fillStyle = '#4a4a5a';
+    ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+
+    // Lighter center
+    ctx.fillStyle = 'rgba(150, 150, 180, 0.3)';
+    ctx.fillRect(-hw * 0.6, -hh * 0.6, hw * 1.2, hh * 1.2);
+
+    // Concentric arc field lines
+    ctx.strokeStyle = 'rgba(100, 150, 255, 0.4)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0.4; i <= 0.8; i += 0.2) {
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.min(hw, hh) * i, -Math.PI * 0.7, Math.PI * 0.7);
+      ctx.stroke();
+    }
+
+    // "M" symbol
+    ctx.fillStyle = '#aabbff';
+    ctx.font = `bold ${Math.min(hw, hh) * 0.7}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('M', 0, 0);
+
+    // Border
+    ctx.strokeStyle = '#2a2a3a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
+
+    // Damage
+    if (this._damageState === DamageState.CRACKED || this._damageState === DamageState.LIGHT_DAMAGE) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-hw * 0.3, -hh * 0.2);
+      ctx.lineTo(hw * 0.1, hh * 0.2);
+      ctx.stroke();
+    }
+  }
+
+  private renderConveyor(ctx: CanvasRenderingContext2D, hw: number, hh: number): void {
+    // Gray belt body
+    ctx.fillStyle = '#6a6a6a';
+    ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+
+    // Belt texture (horizontal lines)
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1;
+    for (let i = -hh + 4; i < hh; i += 6) {
+      ctx.beginPath();
+      ctx.moveTo(-hw, i);
+      ctx.lineTo(hw, i);
+      ctx.stroke();
+    }
+
+    // Directional arrows
+    const dir = this.direction === 'left' ? -1 : 1;
+    ctx.fillStyle = '#ffdd00';
+    for (let ax = -hw * 0.6; ax <= hw * 0.6; ax += hw * 0.6) {
+      ctx.beginPath();
+      ctx.moveTo(ax + dir * 6, 0);
+      ctx.lineTo(ax - dir * 4, -5);
+      ctx.lineTo(ax - dir * 4, 5);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Border
+    ctx.strokeStyle = '#3a3a3a';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
+  }
+
+  private renderExplosiveBarrel(ctx: CanvasRenderingContext2D, hw: number, hh: number): void {
+    // Dark green barrel body
+    ctx.fillStyle = this.fuseTimer >= 0 ? '#8b2500' : '#2d5a27';
+    ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+
+    // Metal bands
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(-hw, -hh, hw * 2, 3);
+    ctx.fillRect(-hw, hh - 3, hw * 2, 3);
+    ctx.fillRect(-hw, -1, hw * 2, 3);
+
+    // Fuse countdown indicator
+    if (this.fuseTimer >= 0) {
+      // Flashing red glow
+      const flash = Math.sin(this.fuseTimer * 12) * 0.5 + 0.5;
+      ctx.fillStyle = `rgba(255, 0, 0, ${0.2 + flash * 0.3})`;
+      ctx.fillRect(-hw, -hh, hw * 2, hh * 2);
+
+      // Countdown bar
+      const progress = this.fuseTimer / EXPLOSIVE_BARREL.fuseTime;
+      ctx.fillStyle = '#ff4400';
+      ctx.fillRect(-hw * 0.8, hh * 0.3, hw * 1.6 * progress, 4);
+    }
+
+    // Hazard symbol
+    ctx.fillStyle = '#ffdd00';
+    ctx.font = `bold ${Math.min(hw, hh) * 0.6}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('☢', 0, -2);
+
+    // Border
+    ctx.strokeStyle = '#1a3a15';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-hw, -hh, hw * 2, hh * 2);
   }
 
   destroy(): void {

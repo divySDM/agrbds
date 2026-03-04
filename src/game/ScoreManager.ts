@@ -22,6 +22,12 @@ export class ScoreManager {
       case MaterialType.STONE:
         this._score += SCORE.BLOCK_STONE;
         break;
+      case MaterialType.RUBBER:
+        this._score += SCORE.BLOCK_RUBBER;
+        break;
+      case MaterialType.SAND:
+        this._score += SCORE.BLOCK_SAND;
+        break;
     }
   }
 
@@ -31,6 +37,14 @@ export class ScoreManager {
 
   addGravityInverter(): void {
     this._score += SCORE.GRAVITY_INVERTER;
+  }
+
+  addMagnetDestroyed(): void {
+    this._score += SCORE.MAGNET_DESTROYED;
+  }
+
+  addExplosiveBarrelDetonation(): void {
+    this._score += SCORE.EXPLOSIVE_BARREL_DETONATION;
   }
 
   addRemainingBirdBonus(count: number): void {

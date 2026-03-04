@@ -12,6 +12,9 @@ game.start();
 // Test instrumentation — DEV mode only, read-only
 if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__AB_TEST_API = {
+    unlockAll(): void {
+      game.highestUnlocked = 60;
+    },
     getState(): TestGameState {
       const scene = game.sceneManager.current;
       const base = {

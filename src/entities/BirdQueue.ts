@@ -2,6 +2,9 @@ import { BirdType } from '../game/types';
 import { Bird } from './Bird';
 import { BombBird } from './BombBird';
 import { YellowBird } from './YellowBird';
+import { BlueBird } from './BlueBird';
+import { WhiteBird } from './WhiteBird';
+import { BigBird } from './BigBird';
 
 export class BirdQueue {
   private queue: BirdType[];
@@ -20,6 +23,15 @@ export class BirdQueue {
     }
     if (type === BirdType.YELLOW) {
       return new YellowBird(x, y);
+    }
+    if (type === BirdType.BLUE) {
+      return new BlueBird(x, y);
+    }
+    if (type === BirdType.WHITE) {
+      return new WhiteBird(x, y);
+    }
+    if (type === BirdType.BIG) {
+      return new BigBird(x, y);
     }
     return new Bird(x, y, BirdType.RED);
   }

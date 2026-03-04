@@ -38,6 +38,26 @@ import { level037 } from './level-037';
 import { level038 } from './level-038';
 import { level039 } from './level-039';
 import { level040 } from './level-040';
+import { level041 } from './level-041';
+import { level042 } from './level-042';
+import { level043 } from './level-043';
+import { level044 } from './level-044';
+import { level045 } from './level-045';
+import { level046 } from './level-046';
+import { level047 } from './level-047';
+import { level048 } from './level-048';
+import { level049 } from './level-049';
+import { level050 } from './level-050';
+import { level051 } from './level-051';
+import { level052 } from './level-052';
+import { level053 } from './level-053';
+import { level054 } from './level-054';
+import { level055 } from './level-055';
+import { level056 } from './level-056';
+import { level057 } from './level-057';
+import { level058 } from './level-058';
+import { level059 } from './level-059';
+import { level060 } from './level-060';
 import type { LevelData } from './types';
 
 export const LEVELS: LevelData[] = [
@@ -81,4 +101,24 @@ export const LEVELS: LevelData[] = [
   level038,
   level039,
   level040,
+  level041,
+  level042,
+  level043,
+  level044,
+  level045,
+  level046,
+  level047,
+  level048,
+  level049,
+  level050,
+  level051,
+  level052,
+  level053,
+  level054,
+  level055,
+  level056,
+  level057,
+  level058,
+  level059,
+  level060,
 ];

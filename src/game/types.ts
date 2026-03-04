@@ -2,12 +2,17 @@ export enum BirdType {
   RED = 'RED',
   YELLOW = 'YELLOW',
   BOMB = 'BOMB',
+  BLUE = 'BLUE',
+  WHITE = 'WHITE',
+  BIG = 'BIG',
 }
 
 export enum MaterialType {
   WOOD = 'WOOD',
   ICE = 'ICE',
   STONE = 'STONE',
+  RUBBER = 'RUBBER',
+  SAND = 'SAND',
 }
 
 export enum DamageState {
@@ -74,6 +79,8 @@ export interface TestGameState {
   cameraX: number;
   slingshotX: number;
   slingshotY: number;
+  abilityUsed?: boolean;
+  spawnedProjectiles?: number;
 }
 
 export enum SpecialBlockType {
@@ -81,6 +88,9 @@ export enum SpecialBlockType {
   GRAVITY_INVERTER = 'GRAVITY_INVERTER',
   GEL_PAD = 'GEL_PAD',
   TELEPORTER = 'TELEPORTER',
+  MAGNET = 'MAGNET',
+  CONVEYOR = 'CONVEYOR',
+  EXPLOSIVE_BARREL = 'EXPLOSIVE_BARREL',
 }
 
 // Scoring constants
@@ -92,6 +102,10 @@ export const SCORE = {
   REMAINING_BIRD: 10000,
   TNT_DETONATION: 2000,
   GRAVITY_INVERTER: 2500,
+  BLOCK_RUBBER: 800,
+  BLOCK_SAND: 200,
+  MAGNET_DESTROYED: 1500,
+  EXPLOSIVE_BARREL_DETONATION: 1800,
   STAR_2_THRESHOLD: 0.6,
   STAR_3_THRESHOLD: 0.85,
 } as const;

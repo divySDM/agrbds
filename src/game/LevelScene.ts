@@ -16,7 +16,9 @@ import type { Bird } from '../entities/Bird';
 import type { Block } from '../entities/Block';
 import { BombBird } from '../entities/BombBird';
 import { YellowBird } from '../entities/YellowBird';
-import { SLINGSHOT, TIMING, SCREEN_SHAKE, BIRD_BOUNDS, TNT, GRAVITY as DEFAULT_GRAVITY, GRAVITY_INVERSION } from '../physics/constants';
+import { BlueBird } from '../entities/BlueBird';
+import { WhiteBird } from '../entities/WhiteBird';
+import { SLINGSHOT, TIMING, SCREEN_SHAKE, BIRD_BOUNDS, TNT, GRAVITY as DEFAULT_GRAVITY, GRAVITY_INVERSION, MAGNET_PULL, CONVEYOR, EXPLOSIVE_BARREL, EGG_BOMB } from '../physics/constants';
 import { HUD } from '../ui/HUD';
 import { VictoryScreen } from '../ui/VictoryScreen';
 import { GameOverScreen } from '../ui/GameOverScreen';
@@ -72,8 +74,14 @@ export class LevelScene implements Scene {
   private gameOverScreen: GameOverScreen | null = null;
   private finalStars: number = 0;
 
+  // Spawned projectiles (blue clones, eggs, etc.)
+  private spawnedProjectiles: Matter.Body[] = [];
+  private eggs: { body: Matter.Body; fuseTimer: number }[] = [];
+  private abilityUsed: boolean = false;
+
   // Special block state
   private pendingTNTs: PendingTNT[] = [];
+  private pendingBarrels: { block: Block; delay: number; chainDepth: number }[] = [];
   private gravityInverted: boolean = false;
   private gravityInversionTimer: number = 0;
   private gravityTintAlpha: number = 0;
@@ -101,6 +109,8 @@ export class LevelScene implements Scene {
       cameraX: Number.isFinite(this.camera?.x) ? this.camera.x : 0,
       slingshotX: this.level?.slingshot.anchorX ?? 200,
       slingshotY: this.level?.slingshot.anchorY ?? 600,
+      abilityUsed: this.abilityUsed,
+      spawnedProjectiles: this.spawnedProjectiles.length,
     };
   }
 
@@ -140,7 +150,11 @@ export class LevelScene implements Scene {
 
     // Reset special block state
     this.pendingTNTs = [];
+    this.pendingBarrels = [];
     this.gravityInverted = false;
+    this.spawnedProjectiles = [];
+    this.eggs = [];
+    this.abilityUsed = false;
     this.gravityInversionTimer = 0;
     this.gravityTintAlpha = 0;
     this.teleportCooldowns.clear();
@@ -206,8 +220,20 @@ export class LevelScene implements Scene {
       this.scoreManager
     );
 
-    // Process sensor collisions (gel pad & teleporter)
+    // Process sensor collisions (gel pad, teleporter & conveyor)
     this.processSensorCollisions();
+
+    // Magnet and conveyor effects (disabled during SETTLING)
+    if (this.turnManager.state === TurnState.AIMING || this.turnManager.state === TurnState.FLYING) {
+      this.updateMagnets();
+      this.updateConveyors();
+    }
+
+    // Update explosive barrel fuses
+    this.updateExplosiveBarrels(effectiveDt);
+
+    // Update egg bomb fuses
+    this.updateEggs(effectiveDt);
 
     // Screen shake and impact flash on significant impacts
     if (maxImpact > SCREEN_SHAKE.IMPACT_THRESHOLD) {
@@ -248,6 +274,10 @@ export class LevelScene implements Scene {
           this.triggerTNT(block, 0);
         } else if (block.specialType === SpecialBlockType.GRAVITY_INVERTER && !block.activated) {
           this.triggerGravityInverter(block);
+        } else if (block.specialType === SpecialBlockType.MAGNET && !block.activated) {
+          block.activated = true;
+          this.scoreManager.addMagnetDestroyed();
+          this.spawnFloatingText(block.body.position.x, block.body.position.y - 30, `+${SCORE.MAGNET_DESTROYED}`, '#aabbff');
         }
         this.spawnParticles(block.body.position.x, block.body.position.y, block.material);
         this.physics.removeBody(block.body);
@@ -286,8 +316,15 @@ export class LevelScene implements Scene {
     }
     this.level.pigs = this.level.pigs.filter((p) => !p.isDestroyed);
 
-    // Clean up destroyed launched birds
+    // Clean up destroyed launched birds and spawned projectiles
     this.launchedBirds = this.launchedBirds.filter((b) => !b.isDestroyed);
+    this.spawnedProjectiles = this.spawnedProjectiles.filter((b) => {
+      if ((b as any).isDestroyed) {
+        this.physics.removeBody(b);
+        return false;
+      }
+      return true;
+    });
 
     // Spawn combo text and SFX
     if (destroyedCount > 0 && this.comboCount >= 3) {
@@ -337,15 +374,19 @@ export class LevelScene implements Scene {
         pos.x < BIRD_BOUNDS.MIN_X;
 
       const birdStopped = this.flyingTime > TIMING.BIRD_SETTLE_GRACE && bird.body.speed < TIMING.BIRD_SETTLE_SPEED;
+      // Also check spawned projectiles (blue clones) are stopped
+      const projectilesSettled = this.spawnedProjectiles.every(b => b.speed < TIMING.BIRD_SETTLE_SPEED);
       const maxFlyingTime = this.flyingTime > TIMING.MAX_FLYING_TIME;
 
-      if (outOfBounds || birdStopped || maxFlyingTime) {
+      if (outOfBounds || (birdStopped && projectilesSettled) || maxFlyingTime) {
         this.turnManager.setState(TurnState.SETTLING);
       }
     }
 
-    // Account for gravity inversion in settling — don't settle while gravity is inverted
-    const hasPendingSpecialEffects = this.gravityInverted || this.pendingTNTs.length > 0;
+    // Account for special effects in settling — don't settle while effects are active
+    const hasPendingSpecialEffects = this.gravityInverted || this.pendingTNTs.length > 0 ||
+      this.pendingBarrels.length > 0 || this.level.blocks.some(b => b.fuseTimer >= 0) ||
+      this.eggs.length > 0;
 
     this.turnManager.update(
       this.physics,
@@ -369,6 +410,13 @@ export class LevelScene implements Scene {
         if (this.currentBird) {
           this.physics.removeBody(this.currentBird.body);
         }
+        // Clean up spawned projectiles from previous turn
+        for (const body of this.spawnedProjectiles) {
+          this.physics.removeBody(body);
+        }
+        this.spawnedProjectiles = [];
+        this.eggs = [];
+        this.abilityUsed = false;
         this.camera.returnToSlingshot(this.level.slingshot.anchorX);
         this.loadNextBird();
       }
@@ -538,6 +586,150 @@ export class LevelScene implements Scene {
     }
   }
 
+  private explodeAt(center: { x: number; y: number }, radius: number, force: number, scoreBonus: number, scoreColor: string): void {
+    this.physics.applyExplosion(center, radius, force);
+
+    // Explosion VFX
+    this.explosionEffects.push({
+      x: center.x,
+      y: center.y,
+      maxRadius: radius,
+      time: 0,
+      duration: TIMING.EXPLOSION_DURATION,
+    });
+    this.camera.shake(SCREEN_SHAKE.BOMB_INTENSITY, 0.3);
+    if (scoreBonus > 0) {
+      this.spawnFloatingText(center.x, center.y - 30, `+${scoreBonus}`, scoreColor);
+    }
+    playExplosion();
+
+    // Apply radial damage to blocks and pigs within blast radius
+    for (const b of this.level.blocks) {
+      if (b.isDestroyed) continue;
+      const dx = b.body.position.x - center.x;
+      const dy = b.body.position.y - center.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= radius) {
+        const falloff = 1 - dist / radius;
+        b.applyDamage(falloff * 120);
+        // Queue chain TNT explosions
+        if (b.isDestroyed && b.specialType === SpecialBlockType.TNT && !b.activated) {
+          this.pendingTNTs.push({ block: b, delay: TNT.chainDelay, chainDepth: 0 });
+        }
+        // Arm explosive barrels in range
+        if (!b.isDestroyed && b.specialType === SpecialBlockType.EXPLOSIVE_BARREL && !b.activated && b.fuseTimer < 0) {
+          b.applyDamage(b.maxHealth || 100); // Force arm
+        }
+      }
+    }
+    for (const pig of this.level.pigs) {
+      if (pig.isDestroyed) continue;
+      const dx = pig.body.position.x - center.x;
+      const dy = pig.body.position.y - center.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= radius) {
+        const falloff = 1 - dist / radius;
+        pig.applyDamage(falloff * 120);
+      }
+    }
+  }
+
+  private updateMagnets(): void {
+    for (const block of this.level.blocks) {
+      if (block.specialType !== SpecialBlockType.MAGNET || block.isDestroyed) continue;
+      const center = block.body.position;
+      const bodies = this.physics.getBodiesInRadius(center, MAGNET_PULL.range);
+      let affected = 0;
+      for (const body of bodies) {
+        if (body === block.body || body.isStatic) continue;
+        if (affected >= MAGNET_PULL.maxAffected) break;
+        const dx = center.x - body.position.x;
+        const dy = center.y - body.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 1) continue;
+        const falloff = 1 - dist / MAGNET_PULL.range;
+        const force = MAGNET_PULL.force * falloff;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        Matter.Body.applyForce(body, body.position, { x: nx * force, y: ny * force });
+        affected++;
+      }
+    }
+  }
+
+  private updateConveyors(): void {
+    const activeContacts = this.physics.getActiveSensorContacts();
+    for (const contact of activeContacts) {
+      const entity = (contact.sensorBody as any).gameEntity as Block | undefined;
+      if (!entity || entity.specialType !== SpecialBlockType.CONVEYOR || entity.isDestroyed) continue;
+      const body = contact.otherBody;
+      if (body.isStatic) continue;
+      const dir = entity.direction === 'left' ? -1 : 1;
+      // Apply lateral force, cap speed
+      if (Math.abs(body.velocity.x) < CONVEYOR.maxSpeed) {
+        Matter.Body.applyForce(body, body.position, { x: CONVEYOR.pushForce * dir, y: 0 });
+      }
+    }
+  }
+
+  private updateExplosiveBarrels(dt: number): void {
+    for (const block of this.level.blocks) {
+      if (block.specialType !== SpecialBlockType.EXPLOSIVE_BARREL || block.fuseTimer < 0) continue;
+      block.fuseTimer -= dt;
+      if (block.fuseTimer <= 0) {
+        // Detonate
+        block.fuseTimer = -1;
+        block.isDestroyed = true;
+        this.scoreManager.addExplosiveBarrelDetonation();
+        this.explodeAt(
+          block.body.position,
+          EXPLOSIVE_BARREL.blastRadius,
+          EXPLOSIVE_BARREL.blastForce,
+          SCORE.EXPLOSIVE_BARREL_DETONATION,
+          '#ff6600'
+        );
+      }
+    }
+
+    // Process pending barrel chain detonations
+    const ready: { block: Block; delay: number; chainDepth: number }[] = [];
+    this.pendingBarrels = this.pendingBarrels.filter((pb) => {
+      pb.delay -= dt;
+      if (pb.delay <= 0) {
+        ready.push(pb);
+        return false;
+      }
+      return true;
+    });
+    for (const pb of ready) {
+      if (!pb.block.isDestroyed && pb.block.fuseTimer < 0) {
+        pb.block.applyDamage(pb.block.maxHealth || 100);
+      }
+    }
+  }
+
+  private updateEggs(dt: number): void {
+    this.eggs = this.eggs.filter((egg) => {
+      egg.fuseTimer -= dt;
+      if (egg.fuseTimer <= 0) {
+        // Detonate egg
+        const pos = egg.body.position;
+        this.explodeAt(pos, EGG_BOMB.blastRadius, EGG_BOMB.blastForce, 0, '#fff');
+        this.physics.removeBody(egg.body);
+        this.spawnedProjectiles = this.spawnedProjectiles.filter(b => b !== egg.body);
+        return false;
+      }
+      // Remove egg if out of bounds
+      const pos = egg.body.position;
+      if (pos.y > GAME_HEIGHT + 100 || pos.x < -200 || pos.x > GAME_WIDTH * 3) {
+        this.physics.removeBody(egg.body);
+        this.spawnedProjectiles = this.spawnedProjectiles.filter(b => b !== egg.body);
+        return false;
+      }
+      return true;
+    });
+  }
+
   private processSensorCollisions(): void {
     const sensorEvents = this.physics.getSensorCollisionEvents();
     for (const event of sensorEvents) {
@@ -684,6 +876,21 @@ export class LevelScene implements Scene {
     // Current bird
     if (this.currentBird && !this.currentBird.isDestroyed) {
       this.currentBird.render(ctx, cam);
+    }
+
+    // Egg projectiles
+    for (const egg of this.eggs) {
+      const ex = egg.body.position.x - cam.x;
+      const ey = egg.body.position.y - cam.y;
+      ctx.fillStyle = '#f5f0e0';
+      ctx.beginPath();
+      ctx.ellipse(ex, ey, EGG_BOMB.radius * 0.8, EGG_BOMB.radius, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ccc';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(ex, ey, EGG_BOMB.radius * 0.8, EGG_BOMB.radius, 0, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
     // Flight trail
@@ -1001,6 +1208,8 @@ export class LevelScene implements Scene {
       WOOD: ['#c4923a', '#9e7530', '#d4a850'],
       ICE: ['#a8d8ea', '#7bb8d0', '#c0e8ff'],
       STONE: ['#8a8a8a', '#6a6a6a', '#aaaaaa'],
+      RUBBER: ['#e84393', '#c0366e', '#ff6bb5'],
+      SAND: ['#dbc49a', '#c4a87a', '#e8d5b0'],
       pig: ['#6abf4b', '#8fd97a', '#50a535'],
     };
     const particleColors = colors[type] || ['#888'];
@@ -1088,6 +1297,7 @@ export class LevelScene implements Scene {
         this.camera.shake(SCREEN_SHAKE.BOMB_INTENSITY, 0.3);
         this.turnManager.setState(TurnState.SETTLING);
         playExplosion();
+        this.abilityUsed = true;
         return;
       }
       if (this.currentBird instanceof YellowBird && !this.currentBird.hasBoosted) {
@@ -1099,6 +1309,37 @@ export class LevelScene implements Scene {
           '#ffd700'
         );
         playBoost();
+        this.abilityUsed = true;
+        return;
+      }
+      if (this.currentBird instanceof BlueBird && !this.currentBird.hasUsedAbility) {
+        const fragments = this.currentBird.split(this.physics);
+        for (const frag of fragments) {
+          this.launchedBirds.push(frag);
+          this.spawnedProjectiles.push(frag.body);
+        }
+        this.spawnFloatingText(
+          this.currentBird.body.position.x,
+          this.currentBird.body.position.y - 30,
+          'SPLIT!',
+          '#5bc0eb'
+        );
+        playBoost();
+        this.abilityUsed = true;
+        return;
+      }
+      if (this.currentBird instanceof WhiteBird && !this.currentBird.hasDroppedEgg) {
+        const eggBody = this.currentBird.dropEgg(this.physics);
+        this.spawnedProjectiles.push(eggBody);
+        this.eggs.push({ body: eggBody, fuseTimer: 1.0 });
+        this.spawnFloatingText(
+          this.currentBird.body.position.x,
+          this.currentBird.body.position.y - 30,
+          'EGG DROP!',
+          '#f0f0f0'
+        );
+        playBoost();
+        this.abilityUsed = true;
         return;
       }
     }
